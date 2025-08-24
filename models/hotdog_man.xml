@@ -19,7 +19,7 @@
 	
         <!-- Torso -->
         <body name="torso" pos="0 0 0">
-            <inertial pos="0 0 0.25" mass="4.0" diaginertia="0.1 0.1 0.1"/>
+            <inertial pos="0 0 0.25" mass="4.0" diaginertia="0.5 0.5 0.5"/>
             <geom name="torso" type="capsule" size="0.04 0.25" pos="0 0 0.25" rgba="0.9 0.9 0.9 0.5" conaffinity="1" contype="1"/> 
             <joint name="torso_x" type="slide" axis="1 0 0"/>
             <joint name="torso_z" type="slide" axis="0 0 1"/>
@@ -27,13 +27,13 @@
 
             <!-- Left leg -->
             <body name="left_thigh" pos="0 0.08 0">
-                <inertial pos="0 0 -0.2" mass="2.0" diaginertia="0.1 0.1 0.1"/>
+                <inertial pos="0 0 -0.2" mass="2.0" diaginertia="0.5 0.5 0.5"/>
                 <geom name="left_thigh" type="capsule" size="0.04 0.2" pos="0 0 -0.2" rgba="0.9 0.9 0.9 0.5" conaffinity="1" contype="1"/>
                 <joint name="left_hip_joint" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.57 1.57"/>
 
                 <!-- Left Shin -->
                 <body name="left_shin" pos="0 0 -0.4">
-                    <inertial pos="0 0 -0.2" mass="1.0" diaginertia="0.1 0.1 0.1"/>
+                    <inertial pos="0 0 -0.2" mass="1.0" diaginertia="0.5 0.5 0.5"/>
                     <geom name="left_shin" type="capsule" size="0.04 0.2" pos="0 0 -0.2" rgba="0.9 0.9 0.9 0.5" conaffinity="1" contype="1"/>
                     <joint name="left_knee_joint" type="hinge" axis="0 1 0" pos="0 0 0" range="0 2.5"/>
                 </body>
@@ -42,13 +42,13 @@
 
             <!-- Right leg -->
             <body name="right_thigh" pos="0 -0.08 0">
-                <inertial pos="0 0 -0.2" mass="2.0" diaginertia="0.1 0.1 0.1"/>
+                <inertial pos="0 0 -0.2" mass="2.0" diaginertia="0.5 0.5 0.5"/>
                 <geom name="right_thigh" type="capsule" size="0.04 0.2" pos="0 0 -0.2" rgba="0.9 0.9 0.9 0.5" conaffinity="1" contype="1"/>
                 <joint name="right_hip_joint" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.57 1.57"/>
 
                 <!-- Right Shin -->
                 <body name="right_shin" pos="0 0 -0.4">
-                    <inertial pos="0 0 -0.2" mass="1.0" diaginertia="0.1 0.1 0.1"/>
+                    <inertial pos="0 0 -0.2" mass="1.0" diaginertia="0.5 0.5 0.5"/>
                     <geom name="right_shin" type="capsule" size="0.04 0.2" pos="0 0 -0.2" rgba="0.9 0.9 0.9 0.5" conaffinity="1" contype="1"/>
                     <joint name="right_knee_joint" type="hinge" axis="0 1 0" pos="0 0 0" range="0 2.5"/>
                 </body>
