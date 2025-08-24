@@ -1,6 +1,6 @@
 ##
 #
-# Indices for XML models
+# Indices for models
 #
 ##
 
@@ -60,9 +60,9 @@ class HotdogMan_IDX:
     # actuated joints
     class JOINT:
 
-        POS_LH = 0
-        POS_LK = 1
-        POS_RH = 2
-        POS_RK = 3
+        LH = 0
+        LK = 1
+        RH = 2
+        RK = 3
 
         SIZE = 4

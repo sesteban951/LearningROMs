@@ -5,9 +5,12 @@ import time
 # pacakge includes
 import mujoco 
 import glfw
+from pydrake.all import *
 
 # custom includes 
 from indeces import HotdogMan_IDX
+
+##################################################################################
 
 # main function
 if __name__ == "__main__":
@@ -95,7 +98,7 @@ if __name__ == "__main__":
         # get the current sim time and state
         t_sim = data.time
 
-        # control at 50Hz
+        # control at desired Hz
         if counter % decimation == 0:
 
             # get the current joint positions and velocities
@@ -103,16 +106,17 @@ if __name__ == "__main__":
             v_joints = data.qvel[idx.VEL.VEL_LH : idx.VEL.VEL_LH + 4].copy()
 
             # PD control
-            q_joints_des = default_joints * np.sin(0.75 * t_sim)
+            q_joints_des = default_joints + 0.1 * np.sin(2 * np.pi * 0.2 * t_sim)
             v_joints_des = np.zeros(4)
-            tau = Kp * (q_joints_des - q_joints) + Kd * (v_joints_des - v_joints)
 
+            # reset the counter 
             counter = 0
 
         # step the counter
         counter += 1
 
         # set the torques
+        tau = Kp * (q_joints_des - q_joints) + Kd * (v_joints_des - v_joints)
         data.ctrl[:] = tau
 
         # step the simulation
