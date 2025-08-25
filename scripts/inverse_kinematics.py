@@ -22,8 +22,42 @@ class InverseKinematics:
         self.L2 = 2 * shin_half_length
         self.L_tot = self.L1 + self.L2
 
-    # IK, foot position in base frame
-    def ik_base(self, p, v):
+    # base frame Jacobian, base -> foot
+    def J_feet_in_base(self, q):
+
+        # unpack the joint angles
+        q_H = q[0][0]
+        q_K = q[1][0]
+
+        # compute the Jacobian
+        J = np.zeros((2,2))
+        J[0,0] = self.L1 * np.cos(q_H) + self.L2 * np.cos(q_H + q_K)
+        J[0,1] = self.L2 * np.cos(q_H + q_K)
+        J[1,0] = self.L1 * np.sin(q_H) + self.L2 * np.sin(q_H + q_K)
+        J[1,1] = self.L2 * np.sin(q_H + q_K)
+
+        return J
+    
+    # FK, foot state in base frame
+    def fk_feet_in_base(self, q, qdot):
+
+        # unpack the joint angles
+        q_H = q[0][0]
+        q_K = q[1][0]
+
+        # compute the foot position in base frame
+        px =  self.L1 * np.sin(q_H) + self.L2 * np.sin(q_H + q_K)
+        pz = -self.L1 * np.cos(q_H) - self.L2 * np.cos(q_H + q_K)
+        p = np.array([[px], [pz]])
+
+        # compute the foot velocity in base frame
+        J = self.J_feet_in_base(q)
+        v = J @ qdot
+
+        return p, v
+
+    # IK, foot state in base frame
+    def ik_feet_in_base(self, p, v):
 
         # unpack the position
         px = p[0][0]
@@ -55,17 +89,51 @@ class InverseKinematics:
         q_H = np.arctan2(px,-pz) + np.arccos(acos_arg)
 
         # pack into array
-        q = np.array([[q_H], [q_K]])
+        q_joints = np.array([[q_H], [q_K]])
 
         # compute the Jacobian
-        J = np.zeros((2,2))
-        J[0,0] = self.L1 * np.cos(q_H) + self.L2 * np.cos(q_H + q_K)
-        J[0,1] = self.L2 * np.cos(q_H + q_K)
-        J[1,0] = self.L1 * np.sin(q_H) + self.L2 * np.sin(q_H + q_K)
-        J[1,1] = self.L2 * np.sin(q_H + q_K)
+        J = self.J_feet_in_base(q_joints)
 
         # compute the joint velocities
-        qdot = np.linalg.pinv(J) @ v
+        qdot_joints = np.linalg.pinv(J) @ v
 
-        return q, qdot
+        return q_joints, qdot_joints
 
+    # IK, robot in world frame 
+    # assuming you can contorl everything, but pass in only what you can contorl
+    def ik_world(self, p_base_des_W, o_base_des_W, p_left_des_W, p_right_des_W,
+                       v_base_des_W, w_base_des_W, v_left_des_W, v_right_des_W):
+        
+        # compute rotation matrix
+        R_base_W = np.array([[np.cos(o_base_des_W), -np.sin(o_base_des_W)],
+                             [np.sin(o_base_des_W),  np.cos(o_base_des_W)]])
+        
+        # compute skew symmetric matrix
+        Omega_skew = np.array([[0, -w_base_des_W],
+                               [w_base_des_W, 0]])
+
+        # compute desired foot positions in base frame
+        p_left_des_B = R_base_W.T @ (p_left_des_W - p_base_des_W)
+        p_right_des_B = R_base_W.T @ (p_right_des_W - p_base_des_W)
+
+        # compute desired foot velocities in base frame
+        v_left_des_B = R_base_W.T @ (v_left_des_W - v_base_des_W) - Omega_skew @ p_left_des_B
+        v_right_des_B = R_base_W.T @ (v_right_des_W - v_base_des_W) - Omega_skew @ p_right_des_B
+
+        # compute IK in base frame for the legs
+        q_left, qdot_left = self.ik_feet_in_base(p_left_des_B, v_left_des_B)
+        q_right, qdot_right = self.ik_feet_in_base(p_right_des_B, v_right_des_B)
+
+        # build the full state
+        q_base = np.array([[p_base_des_W[0]],
+                           [p_base_des_W[1]],
+                           [o_base_des_W]])
+        v_base = np.array([[v_base_des_W[0]],
+                           [v_base_des_W[1]],
+                           [w_base_des_W]])
+        
+        # build the final state
+        q = np.vstack((q_base, q_left, q_right))
+        v = np.vstack((v_base, qdot_left, qdot_right))
+
+        return q, v

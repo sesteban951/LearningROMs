@@ -54,7 +54,7 @@ if __name__ == "__main__":
 
     # set the gains
     Kp = np.array([150, 150, 150, 150])
-    Kd = np.array([30, 30, 30, 30])
+    Kd = np.array([15, 15, 15, 15])
 
     # default base position
     q_base_init = np.array([0.0, 0.9, 0.0])
@@ -110,14 +110,28 @@ if __name__ == "__main__":
         if counter % decimation == 0:
 
             # desired foot position in base frame
-            p_des_base_l = np.array([[0.3], [-0.6]])
-            p_des_base_r = np.array([[-0.3], [-0.6]])
+            c_left = np.array([[0.2], [-0.65]])
+            c_right = np.array([[-0.2], [-0.65]])
 
-            v_des_base_l = np.array([[0.0], [0.0]])
-            v_des_base_r = np.array([[0.0], [0.0]])
+            f = 1.0
+            w = 2.0 * np.pi * f
+            A = 0.1
+            c_left[0] += A * np.sin(w * t_sim)
+            c_left[1] += A * np.cos(w * t_sim)
+            c_right[0] += A * np.sin(w * t_sim + np.pi)
+            c_right[1] += A * np.cos(w * t_sim + np.pi)
+            c_left_x = A * w  * np.cos(w * t_sim)
+            c_left_z = -A * w * np.sin(w * t_sim)
+            c_right_x = A * w * np.cos(w * t_sim + np.pi)
+            c_right_z = -A * w * np.sin(w * t_sim + np.pi)
 
-            q_des_l, qdot_des_l = ik.ik_base(p_des_base_l, v_des_base_l)
-            q_des_r, qdot_des_r = ik.ik_base(p_des_base_r, v_des_base_r)
+            p_des_base_l = c_left
+            p_des_base_r = c_right
+            v_des_base_l = np.array([[c_left_x], [c_left_z]])
+            v_des_base_r = np.array([[c_right_x], [c_right_z]])
+
+            q_des_l, qdot_des_l = ik.ik_feet_in_base(p_des_base_l, v_des_base_l)
+            q_des_r, qdot_des_r = ik.ik_feet_in_base(p_des_base_r, v_des_base_r)
 
             # PD control
             q_joints_des = np.vstack((q_des_l, q_des_r)).flatten()
