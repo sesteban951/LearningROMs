@@ -3,14 +3,46 @@ import numpy as np
 import time
 
 # pacakge includes
+from pydrake.all import *
 import mujoco 
 import glfw
-from pydrake.all import *
 
 # custom includes 
 from indeces import HotdogMan_IDX
 from inverse_kinematics import InverseKinematics
 
+##################################################################################
+
+class Controller:
+
+    def __init__(self, model_file):
+        
+        # create indexing object
+        self.idx = HotdogMan_IDX()
+
+        # create IK object
+        self.ik = InverseKinematics(model_file)
+
+    def compute_joint_target(self, t, state):
+
+        # squats
+        p_left_des = np.array([-0.25, -0.65]).reshape(2,1)
+        p_right_des = np.array([0.15, -0.65]).reshape(2,1)
+        v_left_des = np.zeros((2,1))
+        v_right_des = np.zeros((2,1))
+
+        p_left_des[1] += 0.05 * np.sin(2 * np.pi * 0.5 * t)
+        p_right_des[1] += 0.05 * np.sin(2 * np.pi * 0.5 * t)
+
+        # compute the desired joint positions and velocities
+        q_left_des, v_left_des = self.ik.ik_feet_in_base(p_left_des, v_left_des)
+        q_right_des, v_right_des = self.ik.ik_feet_in_base(p_right_des, v_right_des)
+
+        q_joints_des = np.vstack((q_left_des, q_right_des)).flatten()
+        v_joints_des = np.vstack((v_left_des, v_right_des)).flatten()
+
+        return q_joints_des, v_joints_des
+        
 ##################################################################################
 
 # main function
@@ -49,9 +81,6 @@ if __name__ == "__main__":
     # create an object for indexing
     idx = HotdogMan_IDX()
 
-    # create IK object
-    ik = InverseKinematics(model_file)
-
     # set the gains
     Kp = np.array([150, 150, 150, 150])
     Kd = np.array([15, 15, 15, 15])
@@ -61,9 +90,12 @@ if __name__ == "__main__":
     v_base_init = np.array([0.0, 0.0, 0.0])
     
     # default joint positions
-    default_joints = np.array([-0.5, 0.5, -0.1, 0.5])
+    default_joints = np.array([0.5,-0.5, 0.1, -0.5])
     q_joints_init = default_joints.copy()
     v_joints_init = np.zeros(4)
+
+    # create controller object
+    control = Controller(model_file)
 
     # set the initial state
     data.qpos[idx.POS.POS_X] = q_base_init[0]
@@ -102,6 +134,11 @@ if __name__ == "__main__":
         # get the current sim time and state
         t_sim = data.time
 
+        # build full state
+        q = data.qpos.copy()
+        v = data.qvel.copy()
+        state = np.hstack((q, v)).reshape(-1,1)
+
         # get the current joint positions and velocities
         q_joints = data.qpos[idx.POS.POS_LH : idx.POS.POS_LH + 4].copy()
         v_joints = data.qvel[idx.VEL.VEL_LH : idx.VEL.VEL_LH + 4].copy()
@@ -109,65 +146,24 @@ if __name__ == "__main__":
         # control at desired Hz
         if counter % decimation == 0:
 
-            # desired base frame
-            p_base_W = np.array([[0.2], [1.0]])
-            o_base_W = -np.pi/6
-            p_left_W = np.array([[0.4], [0.3]])
-            p_right_W = np.array([[0.0], [0.3]])
+            # default desired positions and velocities
+            # q_joints_des = default_joints
+            # v_joints_des = np.zeros(4)
 
-            v_base_W = np.array([[0.0], [0.0]])
-            w_base_W = 0.0
-            v_left_W = np.array([[0.0], [0.0]])
-            v_right_W = np.array([[0.0], [0.0]])
+            # compute the desired joint positions and velocities
+            q_joints_des, v_joints_des = control.compute_joint_target(t_sim, state)
 
-            f = 1.0
-            w = 2 * np.pi * f
-            p_base_W[0][0] += 0.05 * np.sin(w * t_sim)
-            p_base_W[1][0] += 0.05 * np.cos(w * t_sim)
-            o_base_W += 0.5 * np.sin(w * t_sim)
-            p_left_W[0][0] += 0.05 * np.sin(w * t_sim + np.pi/2)
-            p_left_W[1][0] += 0.05 * np.cos(w * t_sim + np.pi/2)
-            p_right_W[0][0] -= 0.05 * np.sin(w * t_sim + np.pi/2)
-            p_right_W[1][0] -= 0.05 * np.cos(w * t_sim + np.pi/2)
+            # compute the control
+            u = Kp * (q_joints_des - q_joints) + Kd * (v_joints_des - v_joints)
 
-            v_base_W[0][0] += 0.05 * w * np.cos(w * t_sim)
-            v_base_W[1][0] -= 0.05 * w * np.sin(w * t_sim)
-            w_base_W += 0.5 * w * np.cos(w * t_sim)
-            v_left_W[0][0] += 0.05 * w * np.cos(w * t_sim + np.pi/2)
-            v_left_W[1][0] -= 0.05 * w * np.sin(w * t_sim + np.pi/2)
-            v_right_W[0][0] -= 0.05 * w * np.cos(w * t_sim + np.pi/2)
-            v_right_W[1][0] += 0.05 * w * np.sin(w * t_sim + np.pi/2)
-
-            # compute the finite difference for the velocities
-            if t_sim > 0.05:
-                q_fd = (data.qpos - q_new) * hz_control
-                e = q_fd - v_new
-                print(np.linalg.norm(e))
-                # print(e)
-            
-            # compute the IK
-            q, v = ik.ik_world(p_base_W, o_base_W, p_left_W, p_right_W,
-                               v_base_W, w_base_W, v_left_W, v_right_W)
-            
-            q_new = q.flatten()
-            v_new = v.flatten()
-            
-            # reset the counter 
+            # reset the counter
             counter = 0
-
-        # fix some states of the robot
-        # data.qpos[idx.POS.POS_X] = 0.0
-        # data.qpos[idx.POS.POS_Z] = 1.0
-        # data.qpos[idx.POS.EUL_Y] =0.0
-        data.qpos = q.flatten()
-        data.qvel = v.flatten()
 
         # step the counter
         counter += 1
 
         # set the torques
-        # tau = Kp * (q_joints_des - q_joints) + Kd * (v_joints_des - v_joints)
-        # data.ctrl[:] = tau
+        data.ctrl[:] = u
 
         # step the simulation
         mujoco.mj_step(model, data)
