@@ -109,28 +109,29 @@ class InverseKinematics:
                              [np.sin(o_base_des_W),  np.cos(o_base_des_W)]])
         
         # compute skew symmetric matrix
-        Omega_skew = np.array([[0, -w_base_des_W],
-                               [w_base_des_W, 0]])
+        w_base_des_B = w_base_des_W
+        Omega_skew_B = np.array([[0, -w_base_des_B],
+                                  [w_base_des_B, 0]])
 
         # compute desired foot positions in base frame
         p_left_des_B = R_base_W.T @ (p_left_des_W - p_base_des_W)
         p_right_des_B = R_base_W.T @ (p_right_des_W - p_base_des_W)
 
         # compute desired foot velocities in base frame
-        v_left_des_B = R_base_W.T @ (v_left_des_W - v_base_des_W) - Omega_skew @ p_left_des_B
-        v_right_des_B = R_base_W.T @ (v_right_des_W - v_base_des_W) - Omega_skew @ p_right_des_B
+        v_left_des_B = R_base_W.T @ (v_left_des_W - v_base_des_W) - Omega_skew_B @ p_left_des_B
+        v_right_des_B = R_base_W.T @ (v_right_des_W - v_base_des_W) - Omega_skew_B @ p_right_des_B
 
         # compute IK in base frame for the legs
         q_left, qdot_left = self.ik_feet_in_base(p_left_des_B, v_left_des_B)
         q_right, qdot_right = self.ik_feet_in_base(p_right_des_B, v_right_des_B)
 
         # build the full state
-        q_base = np.array([[p_base_des_W[0]],
-                           [p_base_des_W[1]],
+        q_base = np.array([[p_base_des_W[0][0]],
+                           [p_base_des_W[1][0]],
                            [o_base_des_W]])
-        v_base = np.array([[v_base_des_W[0]],
-                           [v_base_des_W[1]],
-                           [w_base_des_W]])
+        v_base = np.array([[v_base_des_W[0][0]],
+                           [v_base_des_W[1][0]],
+                           [w_base_des_B]])
         
         # build the final state
         q = np.vstack((q_base, q_left, q_right))

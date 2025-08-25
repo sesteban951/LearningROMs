@@ -77,7 +77,7 @@ if __name__ == "__main__":
 
     # simulation setup
     hz_render = 50.0
-    hz_control = 100.0
+    hz_control = 1000.0
     t_max = 15.0
 
     # compute the decimation
@@ -109,48 +109,65 @@ if __name__ == "__main__":
         # control at desired Hz
         if counter % decimation == 0:
 
-            # desired foot position in base frame
-            c_left = np.array([[0.2], [-0.65]])
-            c_right = np.array([[-0.2], [-0.65]])
+            # desired base frame
+            p_base_W = np.array([[0.2], [1.0]])
+            o_base_W = -np.pi/6
+            p_left_W = np.array([[0.4], [0.3]])
+            p_right_W = np.array([[0.0], [0.3]])
+
+            v_base_W = np.array([[0.0], [0.0]])
+            w_base_W = 0.0
+            v_left_W = np.array([[0.0], [0.0]])
+            v_right_W = np.array([[0.0], [0.0]])
 
             f = 1.0
-            w = 2.0 * np.pi * f
-            A = 0.1
-            c_left[0] += A * np.sin(w * t_sim)
-            c_left[1] += A * np.cos(w * t_sim)
-            c_right[0] += A * np.sin(w * t_sim + np.pi)
-            c_right[1] += A * np.cos(w * t_sim + np.pi)
-            c_left_x = A * w  * np.cos(w * t_sim)
-            c_left_z = -A * w * np.sin(w * t_sim)
-            c_right_x = A * w * np.cos(w * t_sim + np.pi)
-            c_right_z = -A * w * np.sin(w * t_sim + np.pi)
+            w = 2 * np.pi * f
+            p_base_W[0][0] += 0.05 * np.sin(w * t_sim)
+            p_base_W[1][0] += 0.05 * np.cos(w * t_sim)
+            o_base_W += 0.5 * np.sin(w * t_sim)
+            p_left_W[0][0] += 0.05 * np.sin(w * t_sim + np.pi/2)
+            p_left_W[1][0] += 0.05 * np.cos(w * t_sim + np.pi/2)
+            p_right_W[0][0] -= 0.05 * np.sin(w * t_sim + np.pi/2)
+            p_right_W[1][0] -= 0.05 * np.cos(w * t_sim + np.pi/2)
 
-            p_des_base_l = c_left
-            p_des_base_r = c_right
-            v_des_base_l = np.array([[c_left_x], [c_left_z]])
-            v_des_base_r = np.array([[c_right_x], [c_right_z]])
+            v_base_W[0][0] += 0.05 * w * np.cos(w * t_sim)
+            v_base_W[1][0] -= 0.05 * w * np.sin(w * t_sim)
+            w_base_W += 0.5 * w * np.cos(w * t_sim)
+            v_left_W[0][0] += 0.05 * w * np.cos(w * t_sim + np.pi/2)
+            v_left_W[1][0] -= 0.05 * w * np.sin(w * t_sim + np.pi/2)
+            v_right_W[0][0] -= 0.05 * w * np.cos(w * t_sim + np.pi/2)
+            v_right_W[1][0] += 0.05 * w * np.sin(w * t_sim + np.pi/2)
 
-            q_des_l, qdot_des_l = ik.ik_feet_in_base(p_des_base_l, v_des_base_l)
-            q_des_r, qdot_des_r = ik.ik_feet_in_base(p_des_base_r, v_des_base_r)
-
-            # PD control
-            q_joints_des = np.vstack((q_des_l, q_des_r)).flatten()
-            v_joints_des = np.vstack((qdot_des_l, qdot_des_r)).flatten()
-
+            # compute the finite difference for the velocities
+            if t_sim > 0.05:
+                q_fd = (data.qpos - q_new) * hz_control
+                e = q_fd - v_new
+                print(np.linalg.norm(e))
+                # print(e)
+            
+            # compute the IK
+            q, v = ik.ik_world(p_base_W, o_base_W, p_left_W, p_right_W,
+                               v_base_W, w_base_W, v_left_W, v_right_W)
+            
+            q_new = q.flatten()
+            v_new = v.flatten()
+            
             # reset the counter 
             counter = 0
 
         # fix some states of the robot
-        data.qpos[idx.POS.POS_X] = 0.0
-        data.qpos[idx.POS.POS_Z] = 1.0
-        data.qpos[idx.POS.EUL_Y] =0.0
+        # data.qpos[idx.POS.POS_X] = 0.0
+        # data.qpos[idx.POS.POS_Z] = 1.0
+        # data.qpos[idx.POS.EUL_Y] =0.0
+        data.qpos = q.flatten()
+        data.qvel = v.flatten()
 
         # step the counter
         counter += 1
 
         # set the torques
-        tau = Kp * (q_joints_des - q_joints) + Kd * (v_joints_des - v_joints)
-        data.ctrl[:] = tau
+        # tau = Kp * (q_joints_des - q_joints) + Kd * (v_joints_des - v_joints)
+        # data.ctrl[:] = tau
 
         # step the simulation
         mujoco.mj_step(model, data)
