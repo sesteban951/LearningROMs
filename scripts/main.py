@@ -9,6 +9,7 @@ from pydrake.all import *
 
 # custom includes 
 from indeces import HotdogMan_IDX
+from inverse_kinematics import InverseKinematics
 
 ##################################################################################
 
@@ -48,12 +49,15 @@ if __name__ == "__main__":
     # create an object for indexing
     idx = HotdogMan_IDX()
 
+    # create IK object
+    ik = InverseKinematics(model_file)
+
     # set the gains
-    Kp = np.array([75, 75, 75, 75])
-    Kd = np.array([5, 5, 5, 5])
+    Kp = np.array([150, 150, 150, 150])
+    Kd = np.array([30, 30, 30, 30])
 
     # default base position
-    q_base_init = np.array([0.0, 0.8, 0.0])
+    q_base_init = np.array([0.0, 0.9, 0.0])
     v_base_init = np.array([0.0, 0.0, 0.0])
     
     # default joint positions
@@ -73,7 +77,7 @@ if __name__ == "__main__":
 
     # simulation setup
     hz_render = 50.0
-    hz_control = 50.0
+    hz_control = 100.0
     t_max = 15.0
 
     # compute the decimation
@@ -98,19 +102,34 @@ if __name__ == "__main__":
         # get the current sim time and state
         t_sim = data.time
 
+        # get the current joint positions and velocities
+        q_joints = data.qpos[idx.POS.POS_LH : idx.POS.POS_LH + 4].copy()
+        v_joints = data.qvel[idx.VEL.VEL_LH : idx.VEL.VEL_LH + 4].copy()
+
         # control at desired Hz
         if counter % decimation == 0:
 
-            # get the current joint positions and velocities
-            q_joints = data.qpos[idx.POS.POS_LH : idx.POS.POS_LH + 4].copy()
-            v_joints = data.qvel[idx.VEL.VEL_LH : idx.VEL.VEL_LH + 4].copy()
+            # desired foot position in base frame
+            p_des_base_l = np.array([[0.3], [-0.6]])
+            p_des_base_r = np.array([[-0.3], [-0.6]])
+
+            v_des_base_l = np.array([[0.0], [0.0]])
+            v_des_base_r = np.array([[0.0], [0.0]])
+
+            q_des_l, qdot_des_l = ik.ik_base(p_des_base_l, v_des_base_l)
+            q_des_r, qdot_des_r = ik.ik_base(p_des_base_r, v_des_base_r)
 
             # PD control
-            q_joints_des = default_joints + 0.1 * np.sin(2 * np.pi * 0.2 * t_sim)
-            v_joints_des = np.zeros(4)
+            q_joints_des = np.vstack((q_des_l, q_des_r)).flatten()
+            v_joints_des = np.vstack((qdot_des_l, qdot_des_r)).flatten()
 
             # reset the counter 
             counter = 0
+
+        # fix some states of the robot
+        data.qpos[idx.POS.POS_X] = 0.0
+        data.qpos[idx.POS.POS_Z] = 1.0
+        data.qpos[idx.POS.EUL_Y] =0.0
 
         # step the counter
         counter += 1
