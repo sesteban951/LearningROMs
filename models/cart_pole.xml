@@ -1,0 +1,62 @@
+<mujoco model="cart_pole">
+    <!-- Simulation settings -->
+    <option solver="Newton" timestep="0.02" iterations="1" ls_iterations="4" />
+
+	<!-- Set angles to be in radians -->
+	<compiler angle="radian" autolimits="true" eulerseq="zyx"/>
+
+    <!-- Default properties -->
+    <default>
+        <joint armature="0.01" damping="0.01" limited="true" />
+        <geom contype="0" friction="0.1 0.1 0.1" />
+    </default>
+
+    <!-- Memory settings -->
+    <size nstack="3000" />
+
+    <worldbody>
+
+        <!-- Origin -->
+        <geom name="ball" pos="0 0 0.8" type="sphere" size="0.03" rgba="0.8 0.2 0.2 1"/>
+        
+        <!-- Rail -->
+        <geom name="rail" pos="0 0 0.8" quat="0.707 0 0.707 0" type="capsule" size="0.02 2.0"/>
+
+        <!-- Cart -->
+        <body name="cart" pos="0 0 0.8">
+            <inertial pos="0.0 0.0 0.0" mass="1.0" diaginertia="0.1 0.1 0.1" />
+            <geom name="cart" pos="0 0 0" size="0.2 0.1 0.1" type="box" rgba="0.3 0.3 0.3 0.7"/>
+            <joint axis="1 0 0" limited="true" name="slider" pos="0 0 0.1" range="-1.0 1.0" type="slide" />
+
+            <!-- Pole -->
+            <body name="pole" pos="0 0 0">
+                <inertial pos="0 0 0.3" mass="0.2" diaginertia="0.05 0.05 0.05" />
+                <geom name="pole" fromto="0 0 0 0.001 0 0.6" size="0.02 0.3" type="capsule" rgba="0.7 0.7 0.7 0.7"/>
+                <joint axis="0 -1 0" name="hinge" pos="0 0 0" range="-inf inf" type="hinge" />
+            </body>
+
+        </body>
+
+    </worldbody>
+
+    <!-- Actuator -->
+    <actuator>
+        <motor name="slide" joint="slider" ctrllimited="true" ctrlrange="-100 100" gear="1"/>
+    </actuator>
+
+    <!-- Specify the light settings -->
+    <asset>
+        <texture type="skybox" builtin="flat" rgb1="0 0 0" rgb2="0 0 0" width="512" height="3072"/>
+        <texture type="2d" name="groundplane" builtin="checker" mark="edge" rgb1="0.2 0.3 0.4" rgb2="0.1 0.2 0.3" markrgb="0.9 0.9 0.9" width="300" height="300"/>
+        <material name="groundplane" texture="groundplane" texuniform="true" texrepeat="5 5" reflectance="0.2"/>
+    </asset>
+
+    <worldbody>
+        <!-- Add light -->
+        <light pos="1.0 0.5 0.0" dir="0 0 -1" directional="true"/>  
+    
+        <!-- Add the Floor -->
+        <geom name="floor" size="0 0 0.05" type="plane" material="groundplane"/>
+    </worldbody>
+
+</mujoco>
