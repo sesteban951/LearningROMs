@@ -47,7 +47,7 @@ class ODESolver:
 
         return t_traj
 
-    ###################### SINGLE TRAJ INTEGRATION ######################
+    ###################### SINGLE TRAJECTORY INTEGRATION ######################
 
     # RK4 Integration
     @partial(jit, static_argnums=(0,3))

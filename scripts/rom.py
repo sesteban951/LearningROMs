@@ -10,10 +10,9 @@ import jax.numpy as jnp         # standard jax numpy
 # DOUBLE INTEGRATOR
 ##################################################################################
 
-# general ODE solver class
 class DoubleIntegrator:
     """
-        Double Integrator Dynamics Class
+    Double Integrator Dynamics Class
     """
     # initialization
     def __init__(self):
@@ -26,16 +25,17 @@ class DoubleIntegrator:
     @staticmethod
     def f(t, x, u):
         """
-            Double Integrator Dynamics
-            ẋ = Ax + Bu
-            
-            Args:
-                t: time 
-                x: state, shape (2,)
-                u: control, shape (1,)
-            Returns:
-                xdot: derivative, shape (2,)
+        Double Integrator Dynamics
+        ẋ = Ax + Bu
+        
+        Args:
+            t: time 
+            x: state, shape (2,)
+            u: control, shape (1,)
+        Returns:
+            xdot: derivative, shape (2,)
         """
+
         # include the parameters here to make pure functions for jitting and vmap
         A = jnp.array([[0.0, 1.0],
                        [0.0, 0.0]]) # (2, 2)
@@ -59,16 +59,90 @@ class DoubleIntegrator:
         Returns:
             u: control, shape (1,)
         """
+
         # controller gains
         kp = 10.0  
         kd = 1.0   
-        K = jnp.array([kp, kd])  # (2,) gains for [position, velocity]
         
         # compute control input
-        u = -jnp.dot(K, x)     # scalar
+        p_des = 1.0    # desired position
+        v_des = 0.0    # desired velocity
+        u = kp * (p_des - x[0]) + kd * (v_des - x[1])  # scalar
 
         return jnp.array([u])  # make it shape (1,)
 
 ##################################################################################
 # PENDULUM
+##################################################################################
+
+class Pendulum:
+    """
+    Pendulum Dynamics Class
+    """
+    # initialization
+    def __init__(self):
+
+        # state and input dimensions
+        self.nx = 2
+        self.nu = 1
+
+    # dynamics function, continuous time
+    @staticmethod
+    def f(t, x, u):
+        """
+        Pendulum Dynamics (underactuated robotics Ch 2.1)
+        m l² θ̈ + b θ̇ + m g l sin(θ) = τ
+
+        Args:
+            t: time 
+            x: state, shape (2,)
+            u: control, shape (1,)
+        Returns:
+            xdot: derivative, shape (2,)
+        """
+
+        # include the parameters here to make pure functions for jitting and vmap
+        L = 1.0   # length of the pendulum
+        m = 1.0   # mass of the pendulum
+        g = 9.81  # acceleration due to gravity
+        b = 0.1   # damping coefficient        
+
+        # extract state variables
+        theta = x[0]      # angle
+        theta_dot = x[1]  # angular velocity
+        tau = u[0]        # control input
+
+        # dynamics
+        theta_ddot = (tau - m * g * L * jnp.sin(theta) - b * theta_dot) / (m * L**2)
+
+        # build the dynamics vector
+        x_dot = jnp.array([theta_dot, theta_ddot])
+
+        return x_dot
+        
+    # feedback controller
+    @staticmethod
+    def k(t, x):
+        """
+        Simple PD controller
+        """
+
+        # controller gains
+        kp = 10.0
+        kd = 1.0
+
+        # extract state variables
+        theta = x[0]      # theta (angle)
+        theta_dot = x[1]  # theta_dot (angular velocity)
+    
+        # compute the control input
+        theta_des = 3.14     # desired angle (radians)
+        theta_dot_des = 0.0  # desired angular velocity
+        u = kp * (theta_des - theta) + kd * (theta_dot_des - theta_dot)   # scalar
+
+        return jnp.array([u])  # make it shape (1,)
+
+
+##################################################################################
+# VAN DER POL OSCILLATOR
 ##################################################################################

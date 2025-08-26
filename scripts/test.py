@@ -9,8 +9,8 @@ import jax.numpy as jnp         # standard jax numpy
 import jax.random as random     # jax random number generation
 
 # custom imports
-from rom import DoubleIntegrator
-from ode_solver import ODESolver
+from rom import DoubleIntegrator, Pendulum  
+from ode_solver import ODESolver          
 
 #############################################################################
 
@@ -41,7 +41,8 @@ if __name__ == "__main__":
     key = random.PRNGKey(seed)
     
     # create an instance of the DoubleIntegrator class
-    rom = DoubleIntegrator()
+    # rom = DoubleIntegrator()
+    rom = Pendulum()
 
     # create the ODE solver with the desired dynamics to integrate
     solver = ODESolver(rom)
@@ -88,14 +89,14 @@ if __name__ == "__main__":
 
     # --- integration parameters ---
     dt = 0.01
-    N = 250
+    N = 1000
     batch_size = 100_000  # number of different initial conditions
 
     # --- generate random initial conditions ---
     subkeys = create_subkeys(key, 2)  # (batch_size, 2)
-    positions = jax.random.uniform(subkeys[0], shape=(batch_size,), minval=-1.0, maxval=1.0)
-    velocities = jax.random.uniform(subkeys[1], shape=(batch_size,), minval=-1.0, maxval=1.0)
-    x0_batch = jnp.stack([positions, velocities], axis=1)  # shape (batch_size, 2)
+    x1 = jax.random.uniform(subkeys[0], shape=(batch_size,), minval=-1.0, maxval=1.0)
+    x2 = jax.random.uniform(subkeys[1], shape=(batch_size,), minval=-1.0, maxval=1.0)
+    x0_batch = jnp.stack([x1, x2], axis=1)  # shape (batch_size, 2)
 
     print("x0_batch type:", type(x0_batch))
     print("x0_batch dtype:", x0_batch.dtype)
@@ -131,14 +132,10 @@ if __name__ == "__main__":
 
     num_trajs_plot = 150
     for i in range(min(num_trajs_plot, batch_size)):  
-        # plt.plot(t_traj, x_traj_batch[i,:,0], alpha=0.6)
         plt.plot(x_traj_batch[i,:,1], x_traj_batch[i,:,0], alpha=0.6)
 
-    plt.xlabel("Time [s]")
-    plt.ylabel("Position")
-    plt.title("Double Integrator: multiple trajectories")
+    plt.xlabel("x1")
+    plt.ylabel("x2")
+    plt.title(rom.__class__.__name__)
     plt.grid(True)
-    plt.axis("equal")
     plt.show()
-
-
