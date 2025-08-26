@@ -17,3 +17,11 @@ Install Mujoco via ```pip``` from these intructions ```https://mujoco.readthedoc
 ```bash
 pip install mujoco
 ```
+
+## Mujoco MJX
+Used for some GPU Mujoco simulation.
+
+Install MJX via ```pip``` from these intructions ```https://mujoco.readthedocs.io/en/stable/mjx.html```, for example:
+```bash
+pip install mujoco-mjx
+```
