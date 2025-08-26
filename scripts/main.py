@@ -47,7 +47,7 @@ if __name__ == "__main__":
     seed = 0
     key = random.PRNGKey(seed)
     
-    # create an instance of the DoubleIntegrator class
+    # create an instance of Full Order Model (FOM)
     # rom = DoubleIntegrator()
     # rom = Pendulum()
     rom = VanDerPol()
@@ -114,10 +114,13 @@ if __name__ == "__main__":
     t_traj = solver.create_time_array(dt, N)                           # shape (N+1,)
     t0 = time.time()
     x_traj_batch = solver.forward_propagate_cl_batch(x0_batch, dt, N)  # shape (batch_size, N+1, 2)
+    x_traj_batch.block_until_ready()  # ensure computation is done
     t1 = time.time()
     x_traj_batch = solver.forward_propagate_cl_batch(x0_batch, dt, N)  # shape (batch_size, N+1, 2)
+    x_traj_batch.block_until_ready()  # ensure computation is done
     t2 = time.time()
     x_traj_batch = solver.forward_propagate_cl_batch(x0_batch, dt, N)  # shape (batch_size, N+1, 2)
+    x_traj_batch.block_until_ready()  # ensure computation is done
     t3 = time.time()
 
     print(f"Time for first call (includes compilation): {t1 - t0:.4f} seconds")
