@@ -1,10 +1,11 @@
 ##
 #
-# Assortment of full order models (FOMs).
+#  Assortment of full order models (FOMs).
 #
 ##
 
-import jax.numpy as jnp         # standard jax numpy
+# jax imports
+import jax.numpy as jnp
 
 ##################################################################################
 # DOUBLE INTEGRATOR
@@ -146,3 +147,49 @@ class Pendulum:
 ##################################################################################
 # VAN DER POL OSCILLATOR
 ##################################################################################
+
+class VanDerPol:
+    """
+    Van der Pol Oscillator Dynamics Class
+    """
+    # initialization
+    def __init__(self, mu=1.0):
+
+        # state and input dimensions
+        self.nx = 2
+        self.nu = 0
+
+    # dynamics function, continuous time
+    def f(self, t, x, u):
+        """
+        Van der Pol Oscillator Dynamics (μ > 0 determines nonlinearity and the strength of the damping)
+        ẋ₁ = x₂
+        ẋ₂ = μ (1 - x₁²) x₂ - x₁
+        
+        Args:
+            t: time 
+            x: state, shape (2,)
+            u: control, shape (0,) or None
+        Returns:
+            xdot: derivative, shape (2,)
+        """
+
+        # include the parameters here to make pure functions for jitting and vmap
+        mu = 1.0
+
+        # extract state variables
+        x1 = x[0]
+        x2 = x[1]
+
+        # dynamics
+        x1_dot = x2
+        x2_dot = mu * (1 - x1**2) * x2 - x1
+
+        # build the dynamics vector
+        xdot = jnp.array([x1_dot, x2_dot])
+
+        return xdot
+    
+    # no control input for this system
+    def k(self, t, x):
+        return jnp.array([])  # shape (0,)

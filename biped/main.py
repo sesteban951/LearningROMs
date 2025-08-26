@@ -7,8 +7,8 @@ import mujoco
 import glfw
 
 # custom includes 
-from scripts.biped.indeces import HotdogMan_IDX
-from scripts.biped.inverse_kinematics import InverseKinematics
+from indeces import HotdogMan_IDX
+from inverse_kinematics import InverseKinematics
 
 ##################################################################################
 

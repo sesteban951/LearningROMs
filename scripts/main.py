@@ -1,3 +1,10 @@
+##
+#
+#  Main script to demonstrate the ODE solver with different full order models (FOMs).
+#
+##
+
+
 # standard imports 
 import numpy as np               # standard numpy
 import matplotlib.pyplot as plt  # standard matplotlib
@@ -9,7 +16,7 @@ import jax.numpy as jnp         # standard jax numpy
 import jax.random as random     # jax random number generation
 
 # custom imports
-from fom import DoubleIntegrator, Pendulum  
+from fom import DoubleIntegrator, Pendulum, VanDerPol
 from ode_solver import ODESolver          
 
 #############################################################################
@@ -42,7 +49,8 @@ if __name__ == "__main__":
     
     # create an instance of the DoubleIntegrator class
     # rom = DoubleIntegrator()
-    rom = Pendulum()
+    # rom = Pendulum()
+    rom = VanDerPol()
 
     # create the ODE solver with the desired dynamics to integrate
     solver = ODESolver(rom)
@@ -89,13 +97,13 @@ if __name__ == "__main__":
 
     # --- integration parameters ---
     dt = 0.01
-    N = 1000
+    N = 500
     batch_size = 100_000  # number of different initial conditions
 
     # --- generate random initial conditions ---
     subkeys = create_subkeys(key, 2)  # (batch_size, 2)
-    x1 = jax.random.uniform(subkeys[0], shape=(batch_size,), minval=-1.0, maxval=1.0)
-    x2 = jax.random.uniform(subkeys[1], shape=(batch_size,), minval=-1.0, maxval=1.0)
+    x1 = jax.random.uniform(subkeys[0], shape=(batch_size,), minval=-2.0, maxval=2.0)
+    x2 = jax.random.uniform(subkeys[1], shape=(batch_size,), minval=-2.0, maxval=2.0)
     x0_batch = jnp.stack([x1, x2], axis=1)  # shape (batch_size, 2)
 
     print("x0_batch type:", type(x0_batch))
@@ -130,7 +138,8 @@ if __name__ == "__main__":
     # --- optional: plot a few trajectories ---
     plt.figure(figsize=(8,4))
 
-    num_trajs_plot = 150
+    # plot up to num_trajs_plot trajectories
+    num_trajs_plot = 100
     for i in range(min(num_trajs_plot, batch_size)):  
         plt.plot(x_traj_batch[i,:,1], x_traj_batch[i,:,0], alpha=0.6)
 
