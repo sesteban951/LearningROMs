@@ -1,6 +1,6 @@
 ##
 #
-# Assortment of reduced order models (ROMs).
+# Assortment of full order models (FOMs).
 #
 ##
 

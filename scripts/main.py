@@ -9,7 +9,7 @@ import jax.numpy as jnp         # standard jax numpy
 import jax.random as random     # jax random number generation
 
 # custom imports
-from rom import DoubleIntegrator, Pendulum  
+from fom import DoubleIntegrator, Pendulum  
 from ode_solver import ODESolver          
 
 #############################################################################
