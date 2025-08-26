@@ -6,3 +6,5 @@ Install Mujoco for python.
 pip install mujoco
 ```
 
+## Drake
+Install Drake for python: ```https://drake.mit.edu/installation.html```
