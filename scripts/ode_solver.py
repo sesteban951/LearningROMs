@@ -5,7 +5,6 @@
 ##
 
 # jax imports
-import jax
 import jax.numpy as jnp         # standard jax numpy
 import jax.lax as lax           # for lax.scan
 from jax import jit, vmap       # jit and vmap for speed and vectorization
@@ -38,6 +37,8 @@ class ODESolver:
         # print message about the initialization
         print(f"ODESolver initialized with dynamics: {dynamics.__class__.__name__}")
 
+    ###################### GENERATE TIME TRAJECTORY ######################
+
     # create time array
     @staticmethod
     def create_time_array(dt, N):
@@ -46,7 +47,9 @@ class ODESolver:
 
         return t_traj
 
-    # RK4 with lax.scan
+    ###################### SINGLE TRAJ INTEGRATION ######################
+
+    # RK4 Integration
     @partial(jit, static_argnums=(0,3))
     def forward_propagate_cl(self, x0, dt, N):
         """
@@ -100,3 +103,62 @@ class ODESolver:
         x_traj = jnp.vstack([x0[None, :], x_hist])
 
         return x_traj
+
+    ####################### BATCHED TRAJ INTEGRATION #######################
+
+    # RK4 with fully batched lax.scan
+    @partial(jit, static_argnums=(0,3))
+    def forward_propagate_cl_batch(self, x0_batch, dt, N):
+        """
+        Forward propagate a batch of closed loop trajectories using RK4 + lax.scan.
+
+        Args:
+            x0_batch: initial states, shape (batch_size, nx)
+            dt: time step
+            N: number of steps
+        Returns:
+            x_traj_batch: state trajectories, shape (batch_size, N+1, nx)
+        """
+
+        # time steps for scan
+        t_inputs = jnp.arange(N) * dt  # (N,)
+
+        # RK4 step function for the whole batch
+        def rk4_step(x_k_batch, t_k):
+            # x_k_batch: (batch_size, nx)
+
+            t1 = t_k
+            x1 = x_k_batch
+            u1 = self.k_batch(t1, x1)      # (batch_size, nu)
+            f1 = self.f_batch(t1, x1, u1)  # (batch_size, nx)
+
+            t2 = t_k + 0.5 * dt
+            x2 = x_k_batch + 0.5 * dt * f1
+            u2 = self.k_batch(t2, x2)
+            f2 = self.f_batch(t2, x2, u2)
+
+            t3 = t_k + 0.5 * dt
+            x3 = x_k_batch + 0.5 * dt * f2
+            u3 = self.k_batch(t3, x3)
+            f3 = self.f_batch(t3, x3, u3)
+
+            t4 = t_k + dt
+            x4 = x_k_batch + dt * f3
+            u4 = self.k_batch(t4, x4)
+            f4 = self.f_batch(t4, x4, u4)
+
+            x_next = x_k_batch + dt / 6.0 * (f1 + 2*f2 + 2*f3 + f4)
+
+            return x_next, x_next  # carry, y
+
+        # scan over time steps
+        x_last, x_hist = lax.scan(rk4_step, x0_batch, t_inputs)
+
+        # prepend initial state, x_traj shape: (N+1, batch_size, nx)
+        x_traj = jnp.concatenate([x0_batch[None, :, :], x_hist], axis=0)
+
+        # swap axes to get (batch_size, N+1, nx)
+        x_traj_batch = jnp.swapaxes(x_traj, 0, 1)
+
+        return x_traj_batch
+
