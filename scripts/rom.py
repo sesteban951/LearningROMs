@@ -18,21 +18,19 @@ class DoubleIntegrator:
     # initialization
     def __init__(self):
 
-        # name
-        self.name = "DoubleIntegrator"
-
         # state and input dimensions
         self.nx = 2
         self.nu = 1
 
     # dynamics function, continuous time
     @staticmethod
-    def f(x, u):
+    def f(t, x, u):
         """
             Double Integrator Dynamics
             ẋ = Ax + Bu
             
             Args:
+                t: time 
                 x: state, shape (2,)
                 u: control, shape (1,)
             Returns:
@@ -56,8 +54,8 @@ class DoubleIntegrator:
         u = -Kx
         
         Args:
+            t: time 
             x: state, shape (2,)
-            t: time (optional, for future extensions)
         Returns:
             u: control, shape (1,)
         """

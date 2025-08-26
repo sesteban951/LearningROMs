@@ -14,6 +14,7 @@ from functools import partial   # for partial functions
 
 # custom imports
 from rom import DoubleIntegrator
+from ode_solver import ODESolver
 
 #############################################################################
 
@@ -38,31 +39,49 @@ if __name__ == "__main__":
     # PRNG key
     seed = 0
     key = random.PRNGKey(seed)
-    subkeys = create_subkeys(key, 2)
     
     # create an instance of the DoubleIntegrator class
     rom = DoubleIntegrator()
 
-    # jit the functions for speed
-    f_jit = jit(rom.f)
-    k_jit = jit(rom.k)
-    f_batched = vmap(f_jit, in_axes=(0, 0)) # vmap over a bunch of states and inputs
-    k_batched = vmap(k_jit, in_axes=(None, 0))
+    # create the ODE solver with the desired dynamics to integrate
+    solver = ODESolver(rom)
 
-    # vmap over a bunch of states
-    batches = 50
-    
-    # generate sample inside of [1, -1] x [1, -1]
-    X = random.uniform(subkeys[0], (batches, rom.nx), minval=-1.0, maxval=1.0) # (batches, 2)
-    U = random.uniform(subkeys[1], (batches, rom.nu), minval=-1.0, maxval=1.0) # (batches, 1)
+    # --- integration parameters ---
+    x0 = jnp.array([1.0, 0.0])  # initial state [position, velocity]
+    dt = 0.01                     # time step
+    N = 500                        # number of steps
 
-    print("X shape:", X.shape)
-    print("U shape:", U.shape)
+    # --- forward propagate using lax.scan RK4 ---
+    t_traj = solver.create_time_array(dt, N)  # (N+1,)
+    x_traj = solver.forward_propagate_cl(x0, dt, N)
 
-    # feed though control 
-    U_ctrl = k_batched(0.0, X) # (batches, 1)
-    print("U_ctrl shape:", U_ctrl.shape)
+    print(t_traj.shape, x_traj.shape)  # (N+1,), (N+1, nx)
 
-    # feed through dynamics
-    Xdot = f_batched(X, U_ctrl) # (batches, 2)
-    print("Xdot shape:", Xdot.shape)
+    # --- convert to numpy for plotting ---
+    x_traj = np.array(x_traj)
+
+    print(x_traj.shape)
+
+    # --- plot results in separate subplots ---
+    fig, axs = plt.subplots(1, 2, figsize=(8, 10))
+
+    # position vs time
+    axs[0].plot(t_traj, x_traj[:,0], color='tab:blue')
+    axs[0].plot(t_traj, x_traj[:,1], color='tab:orange')
+    axs[0].set_xlabel("Time [s]")
+    axs[0].set_ylabel("States")
+    axs[0].grid(True)
+
+    # phase portrait (position vs velocity)
+    axs[1].plot(x_traj[:,0], x_traj[:,1], color='tab:green')
+    axs[1].set_xlabel("Position")
+    axs[1].set_ylabel("Velocity")
+    axs[1].set_title("Phase Portrait")
+    axs[1].grid(True)
+
+    plt.tight_layout()
+    plt.show()
+
+
+
+
