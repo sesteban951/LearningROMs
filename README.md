@@ -1,10 +1,19 @@
 # Dependencies
 
-## Mujoco 
-Install Mujoco for python.
+## JAX
+Install Jax via ```pip``` from these intructions ```https://docs.jax.dev/en/latest/installation.html```, for example:
+```bash
+pip install --upgrade pip
+
+# NVIDIA CUDA 12 installation
+# Note: wheels only available on linux.
+pip install --upgrade "jax[cuda12]"
+```
+
+## Mujoco
+Used for some CPU Mujoco simulation.
+
+Install Mujoco via ```pip``` from these intructions ```https://mujoco.readthedocs.io/en/stable/python.html```, for example:
 ```bash
 pip install mujoco
 ```
-
-## Drake
-Install Drake for python: ```https://drake.mit.edu/installation.html```

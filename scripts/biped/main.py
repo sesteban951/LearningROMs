@@ -3,7 +3,6 @@ import numpy as np
 import time
 
 # pacakge includes
-from pydrake.all import *
 import mujoco 
 import glfw
 
