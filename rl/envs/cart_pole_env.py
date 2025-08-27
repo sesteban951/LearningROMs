@@ -52,6 +52,7 @@ class CartPoleEnv(PipelineEnv):
         self.config = config
 
         # create the brax system
+        # TODO: eventually refactor to use MJX instead since BRAX is now moving away from MJCF
         sys = mjcf.load(self.config.model_path)
 
         # insantiate the parent class
@@ -61,22 +62,23 @@ class CartPoleEnv(PipelineEnv):
             n_frames=self.config.physics_steps_per_control_step  # number of times to step the physics pipeline
                                                                  # for each environment step
         )
+        # n_frames: number of sim steps per control step, dt = n_frames * xml_dt
 
     # reset function
-    def reset(self, key):
+    def reset(self, rng):
         """
         Resets the environment to an initial state.
 
         Args:
-            key: jax random number generator (jax.Array)
+            rng: jax random number generator (jax.Array)
 
         Returns:
             State: brax.envs.base.State object
                    Environment state for training and inference.
         """
         
-        # split the key to sample unique initial conditions
-        key, subkey1, subkey2 = jax.random.split(key, 3)
+        # split the rng to sample unique initial conditions
+        rng, rng1, rng2 = jax.random.split(rng, 3)
 
         # set the state bounds for sampling initial conditions
         qpos_lb = jnp.array([self.config.lb_pos, self.config.lb_theta])
@@ -85,8 +87,8 @@ class CartPoleEnv(PipelineEnv):
         qvel_ub = jnp.array([self.config.ub_vel, self.config.ub_theta_dot])
 
         # sample the initial state
-        qpos = jax.random.uniform(subkey1, (2,), minval=qpos_lb, maxval=qpos_ub)
-        qvel = jax.random.uniform(subkey2, (2,), minval=qvel_lb, maxval=qvel_ub)
+        qpos = jax.random.uniform(rng1, (2,), minval=qpos_lb, maxval=qpos_ub)
+        qvel = jax.random.uniform(rng2, (2,), minval=qvel_lb, maxval=qvel_ub)
         
         # reset the physics state
         data = self.pipeline_init(qpos, qvel)
@@ -105,7 +107,7 @@ class CartPoleEnv(PipelineEnv):
                    "reward_control": jnp.array(0.0)}
 
         # state info
-        info = {"key": key,
+        info = {"rng": rng,
                 "step": 0}
         
         return State(pipeline_state=data,
@@ -193,23 +195,20 @@ class CartPoleEnv(PipelineEnv):
         theta_dot = data.qvel[1]
 
         # compute the observation
-        obs = jnp.concatenate([pos,            # cart position
-                               jnp.cos(theta), # normalized angle
-                               jnp.sin(theta), # normalized angle
-                               vel,            # cart velocity
-                               theta_dot])     # pole angular velocity
+        obs = jnp.array([pos,            # cart position
+                         jnp.cos(theta), # normalized angle
+                         jnp.sin(theta), # normalized angle
+                         vel,            # cart velocity
+                         theta_dot])     # pole angular velocity
         
         return obs
+    
+    @property
+    def observation_size(self) -> int:
+        """Returns the size of the observation space."""
+        return 5
     
     @property
     def action_size(self) -> int:
         """Returns the size of the action space."""
         return 1
-
-    @property
-    def observation_size(self) -> int:
-        """Returns the size of the observation space."""
-        return 5
-
-
-
