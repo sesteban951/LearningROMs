@@ -144,10 +144,11 @@ if __name__ == "__main__":
     # plot up to num_trajs_plot trajectories
     num_trajs_plot = 100
     for i in range(min(num_trajs_plot, batch_size)):  
-        plt.plot(x_traj_batch[i,:,1], x_traj_batch[i,:,0], alpha=0.6)
+        plt.plot(x_traj_batch[i,:,0], x_traj_batch[i,:,1], alpha=0.6)
 
     plt.xlabel("x1")
     plt.ylabel("x2")
     plt.title(rom.__class__.__name__)
     plt.grid(True)
+    # plt.axis('equal')
     plt.show()
