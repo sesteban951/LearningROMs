@@ -11,8 +11,8 @@ from flax import struct
 class CartPoleConfig:
     """Config dataclass for cart-pole."""
 
-    # model path
-    model_path: str = "./models/cart_pole.xml"
+    # model path (NOTE: relative the script that calls this class)
+    model_path: str = "../models/cart_pole.xml"
 
     # number of "simulation steps" for every control input
     physics_steps_per_control_step: int = 1
@@ -53,6 +53,7 @@ class CartPoleEnv(PipelineEnv):
 
         # create the brax system
         # TODO: eventually refactor to use MJX instead since BRAX is now moving away from MJCF
+        # see https://colab.research.google.com/github/google-deepmind/mujoco/blob/main/mjx/tutorial.ipynb
         sys = mjcf.load(self.config.model_path)
 
         # insantiate the parent class
@@ -104,7 +105,8 @@ class CartPoleEnv(PipelineEnv):
                    "reward_pole_pos": jnp.array(0.0),
                    "reward_cart_vel": jnp.array(0.0),
                    "reward_pole_vel": jnp.array(0.0),
-                   "reward_control": jnp.array(0.0)}
+                   "reward_control": jnp.array(0.0),
+                   "reward_total": jnp.array(0.0)}
 
         # state info
         info = {"rng": rng,
@@ -172,6 +174,7 @@ class CartPoleEnv(PipelineEnv):
         state.metrics["reward_cart_vel"] = reward_cart_vel
         state.metrics["reward_pole_vel"] = reward_pole_vel
         state.metrics["reward_control"] = reward_control
+        state.metrics["reward_total"] = reward
         state.info["step"] += 1
 
         return state.replace(pipeline_state=data,
