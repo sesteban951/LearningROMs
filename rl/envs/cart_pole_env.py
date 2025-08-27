@@ -4,6 +4,10 @@ import jax.numpy as jnp
 from brax.envs.base import PipelineEnv, State
 from brax.io import mjcf
 from flax import struct
+from brax import envs
+
+# mujoco imports
+import mujoco
 
 
 # struct to hold the configuration parameters
@@ -12,7 +16,8 @@ class CartPoleConfig:
     """Config dataclass for cart-pole."""
 
     # model path (NOTE: relative the script that calls this class)
-    model_path: str = "../models/cart_pole.xml"
+    model_path: str = "./models/cart_pole.xml"
+    # model_path: str = "../models/cart_pole.xml"
 
     # number of "simulation steps" for every control input
     physics_steps_per_control_step: int = 1
@@ -22,7 +27,7 @@ class CartPoleConfig:
     reward_cart_pos: float = 0.1
     reward_cart_vel: float = 0.01
     reward_pole_vel: float = 0.01
-    reward_control: float = 0.001
+    reward_control: float = 0.0001
 
     # Ranges for sampling initial conditions
     lb_pos: float = -1.0
@@ -31,8 +36,8 @@ class CartPoleConfig:
     ub_theta: float =  jnp.pi
     lb_vel: float = -10.0
     ub_vel: float =  10.0
-    lb_theta_dot: float = -5.0
-    ub_theta_dot: float =  5.0
+    lb_theta_dot: float = -10.0
+    ub_theta_dot: float =  10.0
 
 
 # environment class
@@ -52,9 +57,10 @@ class CartPoleEnv(PipelineEnv):
         self.config = config
 
         # create the brax system
-        # TODO: eventually refactor to use MJX instead since BRAX is now moving away from MJCF
+        # TODO: eventually refactor to use MJX fully instead since BRAX is now moving away from MJCF
         # see https://colab.research.google.com/github/google-deepmind/mujoco/blob/main/mjx/tutorial.ipynb
-        sys = mjcf.load(self.config.model_path)
+        mj_model = mujoco.MjModel.from_xml_path(self.config.model_path)
+        sys = mjcf.load_model(mj_model)
 
         # insantiate the parent class
         super().__init__(
@@ -64,6 +70,9 @@ class CartPoleEnv(PipelineEnv):
                                                                  # for each environment step
         )
         # n_frames: number of sim steps per control step, dt = n_frames * xml_dt
+
+        # print message
+        print(f"Initialized CartPoleEnv with model [{self.config.model_path}].")
 
     # reset function
     def reset(self, rng):
@@ -156,17 +165,36 @@ class CartPoleEnv(PipelineEnv):
         theta_dot_err = jnp.square(theta_dot).sum()
         control_err = jnp.square(tau).sum()
 
-        # compute the rewards
-        reward_cart_pos = -self.config.reward_cart_pos * cart_pos_err
-        reward_pole_pos = -self.config.reward_pole_pos * pole_pos_err
-        reward_cart_vel = -self.config.reward_cart_vel * cart_vel_err
-        reward_pole_vel = -self.config.reward_pole_vel * theta_dot_err
-        reward_control =  -self.config.reward_control * control_err
+        # # compute the rewards
+        # reward_cart_pos = -self.config.reward_cart_pos * cart_pos_err
+        # reward_pole_pos = -self.config.reward_pole_pos * pole_pos_err
+        # reward_cart_vel = -self.config.reward_cart_vel * cart_vel_err
+        # reward_pole_vel = -self.config.reward_pole_vel * theta_dot_err
+        # reward_control =  -self.config.reward_control * control_err
+
+        # compute the rewards with exp kernels
+        alpha_cart_pos = 1.0    # tuning parameter
+        alpha_pole_pos = 2.0
+        alpha_cart_vel = 0.1
+        alpha_pole_vel = 0.1
+        alpha_control = 0.01
+
+        # NOTE: theoretical max reward is sum of all reward_xxx terms (1.1201)
+        reward_cart_pos = jnp.exp(-alpha_cart_pos * cart_pos_err) * self.config.reward_cart_pos
+        reward_pole_pos = jnp.exp(-alpha_pole_pos * pole_pos_err) * self.config.reward_pole_pos
+        reward_cart_vel = jnp.exp(-alpha_cart_vel * cart_vel_err) * self.config.reward_cart_vel
+        reward_pole_vel = jnp.exp(-alpha_pole_vel * theta_dot_err) * self.config.reward_pole_vel
+        reward_control = jnp.exp(-alpha_control * control_err) * self.config.reward_control
         
         # compute the total reward
         reward = (reward_cart_pos + reward_pole_pos + 
                   reward_cart_vel + reward_pole_vel + 
                   reward_control)
+        # reward = reward / jnp.sum(jnp.array([self.config.reward_cart_pos,
+        #                                     self.config.reward_pole_pos,
+        #                                     self.config.reward_cart_vel,
+        #                                     self.config.reward_pole_vel,
+        #                                     self.config.reward_control]))
         
         # update the metrics and info dictionaries
         state.metrics["reward_cart_pos"] = reward_cart_pos
@@ -215,3 +243,7 @@ class CartPoleEnv(PipelineEnv):
     def action_size(self) -> int:
         """Returns the size of the action space."""
         return 1
+
+
+# register the environment
+envs.register_environment("cartpole", CartPoleEnv)
