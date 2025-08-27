@@ -30,3 +30,16 @@ pip install mujoco-mjx
 Used for reinforcement learning.
 
 Install BRAX via inctructions: ```https://github.com/google/brax```
+
+## Tensorboard
+Used for logging RL progress.
+
+For example:
+```bash
+conda install -y -c conda-forge tensorboard
+```
+and use it to view logs, for example:
+```bash
+tensorboard --logdir=./rl/log --port=6006
+```
+and opening ```http://localhost:6006/``` in your internet browser.
