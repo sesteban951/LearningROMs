@@ -20,7 +20,7 @@ class CartPoleConfig:
     # model_path: str = "../models/cart_pole.xml"
 
     # number of "simulation steps" for every control input
-    physics_steps_per_control_step: int = 1
+    physics_steps_per_control_step: int = 10
 
     # Reward function coefficients
     reward_pole_pos: float = 1.0
@@ -114,8 +114,7 @@ class CartPoleEnv(PipelineEnv):
                    "reward_pole_pos": jnp.array(0.0),
                    "reward_cart_vel": jnp.array(0.0),
                    "reward_pole_vel": jnp.array(0.0),
-                   "reward_control": jnp.array(0.0),
-                   "reward_total": jnp.array(0.0)}
+                   "reward_control": jnp.array(0.0)}
 
         # state info
         info = {"rng": rng,
@@ -202,7 +201,6 @@ class CartPoleEnv(PipelineEnv):
         state.metrics["reward_cart_vel"] = reward_cart_vel
         state.metrics["reward_pole_vel"] = reward_pole_vel
         state.metrics["reward_control"] = reward_control
-        state.metrics["reward_total"] = reward
         state.info["step"] += 1
 
         return state.replace(pipeline_state=data,
@@ -235,15 +233,15 @@ class CartPoleEnv(PipelineEnv):
         return obs
     
     @property
-    def observation_size(self) -> int:
+    def observation_size(self):
         """Returns the size of the observation space."""
         return 5
     
     @property
-    def action_size(self) -> int:
+    def action_size(self):
         """Returns the size of the action space."""
         return 1
 
 
 # register the environment
-envs.register_environment("cartpole", CartPoleEnv)
+envs.register_environment("cart_pole", CartPoleEnv)
