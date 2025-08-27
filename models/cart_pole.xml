@@ -1,6 +1,6 @@
 <mujoco model="cart_pole">
     <!-- Simulation settings -->
-    <option solver="Newton" timestep="0.02" iterations="1" ls_iterations="4" />
+    <option solver="Newton" timestep="0.002" iterations="1" ls_iterations="4" />
 
 	<!-- Set angles to be in radians -->
 	<compiler angle="radian" autolimits="true" eulerseq="zyx"/>
