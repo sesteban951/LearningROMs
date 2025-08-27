@@ -7,7 +7,7 @@
 
     <!-- Default properties -->
     <default>
-        <joint armature="0.01" damping="0.01" limited="true" />
+        <joint armature="0.01" damping="1.0" limited="true" />
         <geom contype="0" friction="0.1 0.1 0.1" />
     </default>
 
@@ -41,7 +41,7 @@
 
     <!-- Actuator -->
     <actuator>
-        <motor name="slide" joint="slider" ctrllimited="true" ctrlrange="-100 100" gear="1"/>
+        <motor name="slide" joint="slider" ctrllimited="true" ctrlrange="-1 1" gear="100"/>
     </actuator>
 
     <!-- Specify the light settings -->
