@@ -11,7 +11,7 @@
         <geom contype="0" friction="0.1 0.1 0.1" />
     </default>
 
-    <!-- Memory settings -->
+    <!-- Memory settings (default is 1000) -->
     <size nstack="3000" />
 
     <worldbody>

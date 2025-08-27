@@ -25,3 +25,8 @@ Install MJX via ```pip``` from these intructions ```https://mujoco.readthedocs.i
 ```bash
 pip install mujoco-mjx
 ```
+
+## Brax
+Used for reinforcement learning.
+
+Install BRAX via inctructions: ```https://github.com/google/brax```
