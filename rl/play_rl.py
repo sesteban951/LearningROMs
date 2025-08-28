@@ -27,7 +27,7 @@ if __name__ == "__main__":
     env = envs.get_environment("cart_pole")
     
     # Path to the trained policy parameters
-    params_path = "./rl/policy/cart_pole_policy_2025_08_27_21_39_18.pkl"
+    params_path = "./rl/policy/cart_pole_policy_2025_08_28_09_45_20.pkl"
 
     # Create the PPO_Play object
     ppo_player = PPO_Play(env, params_path)

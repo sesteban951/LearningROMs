@@ -20,10 +20,10 @@ if __name__ == "__main__":
 
     # define hyperparameters in one place
     ppo_config = dict(
-        num_timesteps=30_000_000,       # total training timesteps
+        num_timesteps=60_000_000,       # total training timesteps
         num_evals=10,                  # number of evaluations
         reward_scaling=0.1,            # reward scale
-        episode_length=100,            # max episode length
+        episode_length=150,            # max episode length
         normalize_observations=True,   # normalize observations
         unroll_length=10,               # PPO unroll length
         num_minibatches=32,            # PPO minibatches
@@ -32,7 +32,7 @@ if __name__ == "__main__":
         learning_rate=1e-3,            # optimizer LR
         clipping_epsilon=0.2,         # PPO clipping epsilon
         entropy_cost=1e-3,             # entropy bonus
-        num_envs=2048,                  # parallel envs
+        num_envs=1024,                  # parallel envs
         batch_size=1024,                # batch size
         seed=0,                        # RNG seed
     )
