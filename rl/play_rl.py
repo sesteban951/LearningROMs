@@ -3,92 +3,39 @@ import numpy as np
 import time
 
 # jax imports
-import jax
 import jax.numpy as jnp
 
-# brax improts
+# brax imports
 from brax import envs
-from brax.training.agents.ppo import networks as ppo_networks
-from brax.training.acme import running_statistics
-from brax.training import types
 
 # mujoco imports
 import mujoco
 import mujoco.mjx as mjx
 import mujoco.viewer
 
-# for importing policy
-import pickle
-
 # custom imports
 from envs.cart_pole_env import CartPoleEnv, CartPoleConfig
+from algorithms.ppo_play import PPO_Play
 
 #################################################################
 
 if __name__ == "__main__":
 
-    # Load environment
+    #----------------------- POLICY SETUP -----------------------#
+
+    # Load the environment
     env = envs.get_environment("cart_pole")
-
-    # Load trained params
-    # NOTE: change the path to your saved policy
-    params_path = "./rl/policy/cart_pole_policy_2025_08_27_18_56_47.pkl"
-    with open(params_path, "rb") as f:
-        params = pickle.load(f)
-
-    # Rebuild the policy fn
-    #   - In your training script, the first thing returned was `make_policy`
-    #   - So we need to rebuild that the same way PPO does:
-
-    # get env flags
-    obs_size = env.observation_size
-    act_size = env.action_size
-    normalize_obs = True
-    if normalize_obs == True:
-        preprocess_observations_fn = running_statistics.normalize
-    else:  
-        preprocess_observations_fn = types.identity_observation_preprocessor
-
-    networks = ppo_networks.make_ppo_networks(
-        observation_size=obs_size,
-        action_size=act_size,
-        preprocess_observations_fn=preprocess_observations_fn,
-    )
     
-    print("Rebuilding policy function...")
+    # Path to the trained policy parameters
+    params_path = "./rl/policy/cart_pole_policy_2025_08_27_21_39_18.pkl"
 
-    # Step 1: build fn factory
-    inference_fn_factory = ppo_networks.make_inference_fn(networks)
+    # Create the PPO_Play object
+    ppo_player = PPO_Play(env, params_path)
 
-    # Step 2: create an actual policy fn with trained params
-    deterministic = True   # for inference, we want deterministic actions
-    policy_fn = inference_fn_factory(params=params,
-                                     deterministic=deterministic)
+    # get the jitted policy and obs functions
+    policy_fn, obs_fn = ppo_player.policy_and_obs_functions()
 
-    print("Policy function built.")
-
-    print("Jitting Functions.")
-    # jit important functions
-    policy_fn_jit = jax.jit(lambda obs: policy_fn(obs, jax.random.PRNGKey(0))[0])
-    step_fn_jit = jax.jit(env.step)
-    reset_jit = jax.jit(env.reset)
-    obs_jit = jax.jit(env._compute_obs)
-
-    print("Warm up...")
-
-    # # Warm up State
-    # key = jax.random.PRNGKey(0)
-    # state = reset_jit(rng=key)
-    # for _ in range(5):   # a few steps is enough
-    #     key, subkey = jax.random.split(key)
-    #     obs = obs_jit(state.pipeline_state)
-    #     act, _ = policy_fn_jit(state.obs, subkey)
-    #     act, _ = policy_fn_jit(state.obs, subkey)
-    #     state = step_fn_jit(state, act)
-
-    print("Warm up complete.")
-
-    #############################################################
+    #------------------------- SIMULATION -------------------------#
 
     # import the mujoco model
     config = CartPoleConfig()
@@ -106,7 +53,7 @@ if __name__ == "__main__":
     # initial state
     mj_data.qpos = np.zeros(mj_model.nq)
     mj_data.qvel = np.zeros(mj_model.nv)
-    mj_data.qpos[0] = 0.0       # cart position
+    mj_data.qpos[0] = 0.0     # cart position
     mj_data.qpos[1] = np.pi   # pole angle
 
     # wall clock timing variables
@@ -140,21 +87,14 @@ if __name__ == "__main__":
                 # update the mjx_data
                 mjx_data = mjx_data.replace(qpos=qpos, qvel=qvel)
 
-                # print(f"State: pos {qpos}, vel {qvel}   ")
-
                 # compute the observation
-                obs = obs_jit(mjx_data)   # obs is a jax array
-
-                # print(f"Observation: {obs}")
+                obs = obs_fn(mjx_data)   # obs is a jax array
 
                 # compute the action
-                # act, _ = policy_fn_jit(obs, subkey)  # act is a jax array
-                act = policy_fn_jit(obs)  # act is a jax array
+                act = policy_fn(obs)  # act is a jax array
             
                 # update the controls
                 mj_data.ctrl[:] = np.array(act)
-
-                # print(f"Action: {act}")
 
             # increment counter
             sim_step_counter += 1
@@ -169,4 +109,3 @@ if __name__ == "__main__":
             wall_elapsed = time.time() - wall_start
             if t_sim > wall_elapsed:
                 time.sleep(t_sim - wall_elapsed)
-
