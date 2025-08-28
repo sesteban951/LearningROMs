@@ -24,14 +24,14 @@ if __name__ == "__main__":
     model_file = "./models/hotdog_man.xml"
 
     # load the model 
-    model = mujoco.MjModel.from_xml_path(model_file)
-    data = mujoco.MjData(model)
+    mj_model = mujoco.MjModel.from_xml_path(model_file)
+    mj_data = mujoco.MjData(mj_model)
 
     # place on GPU to get mjx functionality
-    mjx_model = mjx.put_model(model)
-    mjx_data = mjx.put_data(model, data)
+    mjx_model = mjx.put_model(mj_model)
+    mjx_data = mjx.put_data(mj_model, mj_data)
 
-    print(data.qpos, type(data.qpos))
+    print(mj_data.qpos, type(mj_data.qpos))
     print(mjx_data.qpos, type(mjx_data.qpos), mjx_data.qpos.devices())
 
     # create indexing object
@@ -90,7 +90,7 @@ if __name__ == "__main__":
 
     # replay with mujoco viewer
     t_sim_start = time.time()
-    with mujoco.viewer.launch_passive(model, data) as viewer:
+    with mujoco.viewer.launch_passive(mj_model, mj_data) as viewer:
         
         # replay the simulation
         for i in range(0, num_steps, render_decimation):
@@ -100,9 +100,9 @@ if __name__ == "__main__":
             print("Wall Time:", time.time() - t_sim_start, "s")
 
             # update MuJoCo data with MJX state
-            data.qpos[:] = states[i, :model.nq]
-            data.qvel[:] = states[i, model.nq:]
-            mujoco.mj_forward(model, data)
+            mj_data.qpos[:] = states[i, :mj_model.nq]
+            mj_data.qvel[:] = states[i, mj_model.nq:]
+            mujoco.mj_forward(mj_model, mj_data)
 
             # render frame
             viewer.sync()

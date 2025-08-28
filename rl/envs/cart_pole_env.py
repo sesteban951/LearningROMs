@@ -17,17 +17,16 @@ class CartPoleConfig:
 
     # model path (NOTE: relative the script that calls this class)
     model_path: str = "./models/cart_pole.xml"
-    # model_path: str = "../models/cart_pole.xml"
 
     # number of "simulation steps" for every control input
-    physics_steps_per_control_step: int = 10
+    physics_steps_per_control_step: int = 1
 
     # Reward function coefficients
-    reward_pole_pos: float = 1.0
     reward_cart_pos: float = 0.1
+    reward_pole_pos: float = 1.0
     reward_cart_vel: float = 0.01
     reward_pole_vel: float = 0.01
-    reward_control: float = 0.0001
+    reward_control: float = 0.001
 
     # Ranges for sampling initial conditions
     lb_pos: float = -1.0
@@ -104,7 +103,7 @@ class CartPoleEnv(PipelineEnv):
         data = self.pipeline_init(qpos, qvel)
 
         # reset the observation
-        obs = self._get_obs(data)
+        obs = self._compute_obs(data)
 
         # reset reward
         reward, done = jnp.zeros(2)
@@ -143,7 +142,7 @@ class CartPoleEnv(PipelineEnv):
         data = self.pipeline_step(state.pipeline_state, action)
 
         # update the observations
-        obs = self._get_obs(data)
+        obs = self._compute_obs(data)
 
         # data
         pos = data.qpos[0]
@@ -164,27 +163,25 @@ class CartPoleEnv(PipelineEnv):
         theta_dot_err = jnp.square(theta_dot).sum()
         control_err = jnp.square(tau).sum()
 
-        # # compute the rewards
-        # reward_cart_pos = -self.config.reward_cart_pos * cart_pos_err
-        # reward_pole_pos = -self.config.reward_pole_pos * pole_pos_err
-        # reward_cart_vel = -self.config.reward_cart_vel * cart_vel_err
-        # reward_pole_vel = -self.config.reward_pole_vel * theta_dot_err
-        # reward_control =  -self.config.reward_control * control_err
+        # compute the rewards
+        reward_cart_pos = -self.config.reward_cart_pos * cart_pos_err
+        reward_pole_pos = -self.config.reward_pole_pos * pole_pos_err
+        reward_cart_vel = -self.config.reward_cart_vel * cart_vel_err
+        reward_pole_vel = -self.config.reward_pole_vel * theta_dot_err
+        reward_control  = -self.config.reward_control * control_err
 
         # compute the rewards with exp kernels
-        alpha_cart_pos = 1.0    # tuning parameter
-        alpha_pole_pos = 2.0
-        alpha_cart_vel = 0.1
-        alpha_pole_vel = 0.1
-        alpha_control = 0.01
+        # std_cart_pos = 0.3    # tuning parameter
+        # std_pole_pos = 0.1
+        # std_cart_vel = 10.0
+        # std_pole_vel = 10.0
+        # std_control = 0.01
+        # reward_cart_pos = jnp.exp(-cart_pos_err / std_cart_pos) * self.config.reward_cart_pos
+        # reward_pole_pos = jnp.exp(-pole_pos_err / std_pole_pos) * self.config.reward_pole_pos
+        # reward_cart_vel = jnp.exp(cart_vel_err / std_cart_vel) * self.config.reward_cart_vel
+        # reward_pole_vel = jnp.exp(theta_dot_err / std_pole_vel) * self.config.reward_pole_vel
+        # reward_control = jnp.exp( control_err / std_control) * self.config.reward_control
 
-        # NOTE: theoretical max reward is sum of all reward_xxx terms (1.1201)
-        reward_cart_pos = jnp.exp(-alpha_cart_pos * cart_pos_err) * self.config.reward_cart_pos
-        reward_pole_pos = jnp.exp(-alpha_pole_pos * pole_pos_err) * self.config.reward_pole_pos
-        reward_cart_vel = jnp.exp(-alpha_cart_vel * cart_vel_err) * self.config.reward_cart_vel
-        reward_pole_vel = jnp.exp(-alpha_pole_vel * theta_dot_err) * self.config.reward_pole_vel
-        reward_control = jnp.exp(-alpha_control * control_err) * self.config.reward_control
-        
         # compute the total reward
         reward = (reward_cart_pos + reward_pole_pos + 
                   reward_cart_vel + reward_pole_vel + 
@@ -208,7 +205,7 @@ class CartPoleEnv(PipelineEnv):
                              reward=reward)
 
     # internal function to compute the observation
-    def _get_obs(self, data):
+    def _compute_obs(self, data):
         """
         Compute the observation from the physics state.
 
