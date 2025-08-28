@@ -1,1 +1,0 @@
-# TODO: make class to handle my neural nets

@@ -2,8 +2,8 @@
 import functools
 import jax
 
+# standard imports
 from datetime import datetime
-from jax import numpy as jp
 
 from brax import envs
 from brax.training.agents.ppo import train as ppo
@@ -109,7 +109,7 @@ if __name__ == "__main__":
     print(f"time to jit: {times[1] - times[0]}")
     print(f"time to train: {times[-1] - times[1]}")
 
-    # save the trained policy
+    # save the trained policy (NOTE: make sure "/rl/policy" directory exists)
     print("Saving trained policy...")
     save_path = f"./rl/policy/cart_pole_policy_{current_datetime}.pkl"
     with open(save_path, "wb") as f:

@@ -88,6 +88,8 @@ if __name__ == "__main__":
 
     print("Warm up complete.")
 
+    #############################################################
+
     # import the mujoco model
     config = CartPoleConfig()
     model_path = config.model_path

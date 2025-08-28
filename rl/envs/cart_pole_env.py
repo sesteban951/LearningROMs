@@ -52,6 +52,9 @@ class CartPoleEnv(PipelineEnv):
     # initialize the environment
     def __init__(self, config: CartPoleConfig = CartPoleConfig()):
 
+        # robot name
+        self.robot_name = "cart_pole"
+
         # load the config
         self.config = config
 
@@ -170,27 +173,10 @@ class CartPoleEnv(PipelineEnv):
         reward_pole_vel = -self.config.reward_pole_vel * theta_dot_err
         reward_control  = -self.config.reward_control * control_err
 
-        # compute the rewards with exp kernels
-        # std_cart_pos = 0.3    # tuning parameter
-        # std_pole_pos = 0.1
-        # std_cart_vel = 10.0
-        # std_pole_vel = 10.0
-        # std_control = 0.01
-        # reward_cart_pos = jnp.exp(-cart_pos_err / std_cart_pos) * self.config.reward_cart_pos
-        # reward_pole_pos = jnp.exp(-pole_pos_err / std_pole_pos) * self.config.reward_pole_pos
-        # reward_cart_vel = jnp.exp(cart_vel_err / std_cart_vel) * self.config.reward_cart_vel
-        # reward_pole_vel = jnp.exp(theta_dot_err / std_pole_vel) * self.config.reward_pole_vel
-        # reward_control = jnp.exp( control_err / std_control) * self.config.reward_control
-
         # compute the total reward
         reward = (reward_cart_pos + reward_pole_pos + 
                   reward_cart_vel + reward_pole_vel + 
                   reward_control)
-        # reward = reward / jnp.sum(jnp.array([self.config.reward_cart_pos,
-        #                                     self.config.reward_pole_pos,
-        #                                     self.config.reward_cart_vel,
-        #                                     self.config.reward_pole_vel,
-        #                                     self.config.reward_control]))
         
         # update the metrics and info dictionaries
         state.metrics["reward_cart_pos"] = reward_cart_pos
