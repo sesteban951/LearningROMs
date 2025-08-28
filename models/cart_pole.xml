@@ -1,14 +1,14 @@
 <mujoco model="cart_pole">
-    <!-- Simulation settings -->
-    <option solver="Newton" timestep="0.002" iterations="1" ls_iterations="4" />
+    <!-- Simulation settings, NOTE: the timestep seemed to make a huge difference -->
+    <option solver="Newton" timestep="0.02" iterations="1" ls_iterations="4" />
 
-	<!-- Set angles to be in radians -->
-	<compiler angle="radian" autolimits="true" eulerseq="zyx"/>
+    <!-- Inertia is computed from geometry -->
+    <compiler inertiafromgeom="true" />
 
     <!-- Default properties -->
     <default>
-        <joint armature="0.001" damping="0.01" limited="true" />
-        <geom contype="0" friction="0.1 0.1 0.1" />
+        <joint armature="0.0" damping="0.3" limited="true" />
+        <geom contype="0" friction="1.0 0.1 0.1" />
     </default>
 
     <!-- Memory settings (default is 1000) -->
@@ -20,18 +20,16 @@
         <geom name="ball" pos="0 0 0.8" type="sphere" size="0.03" rgba="0.8 0.2 0.2 1"/>
         
         <!-- Rail -->
-        <geom name="rail" pos="0 0 0.8" quat="0.707 0 0.707 0" type="capsule" size="0.02 1.0" rgba="0.8 0.8 0.8 0.5"/>
+        <geom name="rail" pos="0 0 0.8" quat="0.707 0 0.707 0" type="capsule" size="0.02 1.5" rgba="0.8 0.8 0.8 0.5"/>
 
         <!-- Cart -->
         <body name="cart" pos="0 0 0.8">
-            <inertial pos="0.0 0.0 0.0" mass="1.0" diaginertia="0.1 0.1 0.1" />
             <geom name="cart" pos="0 0 0" size="0.2 0.1 0.1" type="box" rgba="0.3 0.3 0.3 0.7"/>
-            <joint axis="1 0 0" limited="true" name="slider" pos="0 0 0.1" range="-1.0 1.0" type="slide" />
+            <joint axis="1 0 0" limited="true" name="slider" pos="0 0 0.1" range="-1.5 1.5" type="slide" />
 
             <!-- Pole -->
             <body name="pole" pos="0 0 0">
-                <inertial pos="0 0 0.3" mass="0.2" diaginertia="0.05 0.05 0.05" />
-                <geom name="pole" fromto="0 0 0 0.001 0 0.6" size="0.02 0.3" type="capsule" rgba="0.6 0.6 0.6 0.7"/>
+                <geom name="pole" fromto="0 0 0 0.001 0 0.6" size="0.04 0.36" type="capsule" rgba="0.6 0.6 0.6 0.5"/>
                 <joint axis="0 -1 0" name="hinge" pos="0 0 0" range="-inf inf" type="hinge" />
             </body>
 

@@ -4,11 +4,13 @@ import time
 
 # jax imports
 import jax
-import jax.numpy as jp         # standard jax numpy
+import jax.numpy as jnp
 
 # brax improts
 from brax import envs
 from brax.training.agents.ppo import networks as ppo_networks
+from brax.training.acme import running_statistics
+from brax.training import types
 
 # mujoco imports
 import mujoco
@@ -30,16 +32,27 @@ if __name__ == "__main__":
 
     # Load trained params
     # NOTE: change the path to your saved policy
-    with open("./rl/policy/cart_pole_policy_2025_08_27_17_22_30.pkl", "rb") as f:
+    params_path = "./rl/policy/cart_pole_policy_2025_08_27_18_56_47.pkl"
+    with open(params_path, "rb") as f:
         params = pickle.load(f)
 
     # Rebuild the policy fn
     #   - In your training script, the first thing returned was `make_policy`
     #   - So we need to rebuild that the same way PPO does:
 
+    # get env flags
+    obs_size = env.observation_size
+    act_size = env.action_size
+    normalize_obs = True
+    if normalize_obs == True:
+        preprocess_observations_fn = running_statistics.normalize
+    else:  
+        preprocess_observations_fn = types.identity_observation_preprocessor
+
     networks = ppo_networks.make_ppo_networks(
-        observation_size=env.observation_size,
-        action_size=env.action_size,
+        observation_size=obs_size,
+        action_size=act_size,
+        preprocess_observations_fn=preprocess_observations_fn,
     )
     
     print("Rebuilding policy function...")
@@ -48,27 +61,30 @@ if __name__ == "__main__":
     inference_fn_factory = ppo_networks.make_inference_fn(networks)
 
     # Step 2: create an actual policy fn with trained params
-    policy_fn = inference_fn_factory(params)
+    deterministic = True   # for inference, we want deterministic actions
+    policy_fn = inference_fn_factory(params=params,
+                                     deterministic=deterministic)
 
     print("Policy function built.")
 
     print("Jitting Functions.")
     # jit important functions
-    policy_fn_jit = jax.jit(policy_fn)
+    policy_fn_jit = jax.jit(lambda obs: policy_fn(obs, jax.random.PRNGKey(0))[0])
     step_fn_jit = jax.jit(env.step)
     reset_jit = jax.jit(env.reset)
     obs_jit = jax.jit(env._compute_obs)
 
     print("Warm up...")
 
-    # Warm up State
-    key = jax.random.PRNGKey(0)
-    state = reset_jit(rng=key)
-    for _ in range(5):   # a few steps is enough
-        key, subkey = jax.random.split(key)
-        obs = obs_jit(state.pipeline_state)
-        act, _ = policy_fn_jit(state.obs, subkey)
-        state = step_fn_jit(state, act)
+    # # Warm up State
+    # key = jax.random.PRNGKey(0)
+    # state = reset_jit(rng=key)
+    # for _ in range(5):   # a few steps is enough
+    #     key, subkey = jax.random.split(key)
+    #     obs = obs_jit(state.pipeline_state)
+    #     act, _ = policy_fn_jit(state.obs, subkey)
+    #     act, _ = policy_fn_jit(state.obs, subkey)
+    #     state = step_fn_jit(state, act)
 
     print("Warm up complete.")
 
@@ -99,6 +115,12 @@ if __name__ == "__main__":
     # start the interactive simulation
     with mujoco.viewer.launch_passive(mj_model, mj_data) as viewer:
 
+        # Set camera parameters
+        viewer.cam.lookat[:] = np.array([0.0, 0.0, 0.8])   # look at x, y, z
+        viewer.cam.distance = 3.0                           # distance from lookat
+        viewer.cam.elevation = -20.0                        # tilt down/up
+        viewer.cam.azimuth = 90.0                           # rotate around lookat
+
         while viewer.is_running():
 
             # get the current sim time and state
@@ -110,27 +132,25 @@ if __name__ == "__main__":
                 print(f"Sim Time: {t_sim:.3f} s")
 
                 # get current state
-                qpos = jp.array(mj_data.qpos)
-                qvel = jp.array(mj_data.qvel)
+                qpos = jnp.array(mj_data.qpos)
+                qvel = jnp.array(mj_data.qvel)
 
                 # update the mjx_data
                 mjx_data = mjx_data.replace(qpos=qpos, qvel=qvel)
 
                 # print(f"State: pos {qpos}, vel {qvel}   ")
 
-                # get the current observation
+                # compute the observation
                 obs = obs_jit(mjx_data)   # obs is a jax array
 
                 # print(f"Observation: {obs}")
 
                 # compute the action
-                act, _ = policy_fn_jit(obs, subkey)  # act is a jax array
-                
-                # convert to numpy array for mujoco
-                act = np.array(act)
-                
+                # act, _ = policy_fn_jit(obs, subkey)  # act is a jax array
+                act = policy_fn_jit(obs)  # act is a jax array
+            
                 # update the controls
-                mj_data.ctrl[:] = act * 100
+                mj_data.ctrl[:] = np.array(act)
 
                 # print(f"Action: {act}")
 

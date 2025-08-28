@@ -29,8 +29,8 @@ class CartPoleConfig:
     reward_control: float = 0.001
 
     # Ranges for sampling initial conditions
-    lb_pos: float = -1.0
-    ub_pos: float =  1.0
+    lb_pos: float = -1.5
+    ub_pos: float =  1.5
     lb_theta: float = -jnp.pi
     ub_theta: float =  jnp.pi
     lb_vel: float = -10.0
@@ -65,7 +65,7 @@ class CartPoleEnv(PipelineEnv):
         super().__init__(
             sys=sys,                                             # brax system defining the kinematic tree and other properties
             backend="mjx",                                       # defining the physics pipeline
-            n_frames=self.config.physics_steps_per_control_step  # number of times to step the physics pipeline
+            n_frames=self.config.physics_steps_per_control_step  # number of times to step the physics pipeline per control step
                                                                  # for each environment step
         )
         # n_frames: number of sim steps per control step, dt = n_frames * xml_dt

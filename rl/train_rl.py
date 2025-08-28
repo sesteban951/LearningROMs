@@ -48,9 +48,9 @@ if __name__ == "__main__":
         # try to get eval reward if it exists
         reward = metrics.get("eval/episode_reward", None)
         if reward is not None:
-            print(f"  Steps: {num_steps}, Reward: {reward}")
+            print(f"  Step: {num_steps}, Reward: {reward}")
         else:
-            print(f"  Steps: {num_steps}, Reward: N/A")
+            print(f"  Step: {num_steps}, Reward: N/A")
 
         times.append(datetime.now())
 
@@ -68,13 +68,11 @@ if __name__ == "__main__":
 
     # define hyperparameters in one place
     ppo_config = dict(
-        # num_timesteps=60_000_000,       # total training timesteps
-        num_timesteps=10_000_000,       # total training timesteps
+        num_timesteps=30_000_000,       # total training timesteps
         num_evals=10,                  # number of evaluations
         reward_scaling=0.1,            # reward scale
         episode_length=100,            # max episode length
         normalize_observations=True,   # normalize observations
-        # action_repeat=1,               # action repeats
         unroll_length=10,               # PPO unroll length
         num_minibatches=32,            # PPO minibatches
         num_updates_per_batch=8,       # PPO updates per batch
@@ -84,8 +82,7 @@ if __name__ == "__main__":
         entropy_cost=1e-3,             # entropy bonus
         num_envs=2048,                  # parallel envs
         batch_size=1024,                # batch size
-        seed=1,                        # RNG seed
-        log_training_metrics=True      # log metrics
+        seed=0,                        # RNG seed
     )
 
     # create the training function with the environment and hyperparameters
