@@ -23,10 +23,10 @@ class AcrobotConfig:
     physics_steps_per_control_step: int = 2
 
     # Reward function coefficients
-    reward_waist_height: float = 3.0
+    reward_waist_height: float = 4.0
     reward_tip_height: float = 0.1
-    reward_angle_vel: float = 0.01
-    reward_control: float = 0.001
+    reward_angle_vel: float = 0.001
+    reward_control: float = 1e-6
 
     # Ranges for sampling initial conditions
     lb_angle_pos: float = -jnp.pi
@@ -156,8 +156,12 @@ class AcrobotEnv(PipelineEnv):
         angle_vel_err = jnp.square(theta1_dot).sum() + jnp.square(theta2_dot).sum()
         control_err = jnp.square(tau).sum()
 
+        # std_tip = 1.0  # std deviation for waist height
+        rewrad_pos_waist = self.config.reward_waist_height * y_waist
+        reward_pos_tip = self.config.reward_tip_height * y_tip
+
         # compute the rewards
-        reward_angle_pos = self.config.reward_waist_height * y_waist + self.config.reward_tip_height * y_tip # waist dominates
+        reward_angle_pos = rewrad_pos_waist + reward_pos_tip
         reward_angle_vel = -self.config.reward_angle_vel * angle_vel_err
         reward_control  = -self.config.reward_control * control_err
 

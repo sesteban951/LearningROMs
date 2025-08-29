@@ -7,7 +7,7 @@
 
     <!-- Default properties -->
     <default>
-        <joint armature="0.0" damping="0.3" limited="true" />
+        <joint armature="0.0" damping="0.5" limited="true" />
         <geom contype="0" friction="1.0 0.1 0.1" />
     </default>
 
