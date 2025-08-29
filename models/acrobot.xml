@@ -7,7 +7,7 @@
 
     <!-- Default properties -->
     <default>
-        <joint armature="0.0" damping="0.5" limited="true" />
+        <joint armature="0.0" damping="0.75" limited="true" />
         <geom contype="0" friction="1.0 0.1 0.1" />
     </default>
 
@@ -38,6 +38,11 @@
     <actuator>
         <motor name="waist" joint="waist" ctrllimited="true" ctrlrange="-1 1" gear="25"/>
     </actuator>
+
+    <!-- default configuration (when you press "Load key" button) -->
+    <keyframe>
+        <key name="default" qpos="3.14 0" qvel="0 0" />
+    </keyframe>
 
     <!-- Specify the light settings -->
     <asset>
