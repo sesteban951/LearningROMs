@@ -55,8 +55,8 @@ if __name__ == "__main__":
         learning_rate=1e-3,            # optimizer LR
         clipping_epsilon=0.2,          # PPO clipping epsilon
         entropy_cost=3e-4,             # entropy bonus
-        num_envs=512,                 # parallel envs
-        batch_size=512,               # batch size
+        num_envs=1024,                 # parallel envs
+        batch_size=1024,               # batch size
         seed=0,                        # RNG seed
     )
 

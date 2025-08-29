@@ -20,10 +20,10 @@ class AcrobotConfig:
     model_path: str = "./models/acrobot.xml"
 
     # number of "simulation steps" for every control input
-    physics_steps_per_control_step: int = 1
+    physics_steps_per_control_step: int = 2
 
     # Reward function coefficients
-    reward_waist_height: float = 1.0
+    reward_waist_height: float = 3.0
     reward_tip_height: float = 0.1
     reward_angle_vel: float = 0.01
     reward_control: float = 0.001

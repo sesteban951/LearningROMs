@@ -36,7 +36,7 @@ if __name__ == "__main__":
     config = AcrobotConfig()
 
     # Path to the trained policy parameters
-    params_path = "./rl/policy/acrobot_policy_2025_08_28_20_06_45.pkl"
+    params_path = "./rl/policy/acrobot_policy_2025_08_28_20_12_24.pkl"
 
     #----------------------- POLICY SETUP -----------------------#
 
