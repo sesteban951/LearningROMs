@@ -15,19 +15,30 @@ import mujoco.viewer
 
 # custom imports
 from envs.cart_pole_env import CartPoleEnv, CartPoleConfig
+from envs.acrobot_env import AcrobotEnv, AcrobotConfig
 from algorithms.ppo_play import PPO_Play
 
 #################################################################
 
 if __name__ == "__main__":
 
-    #----------------------- POLICY SETUP -----------------------#
+    #----------------------- POLICY IMPORT -----------------------#
+
+    # # Load the environment
+    # env = envs.get_environment("cart_pole")
+    # config = CartPoleConfig()
+    
+    # # Path to the trained policy parameters
+    # params_path = "./rl/policy/cart_pole_policy_2025_08_28_09_45_20.pkl"
 
     # Load the environment
-    env = envs.get_environment("cart_pole")
-    
+    env = envs.get_environment("acrobot")
+    config = AcrobotConfig()
+
     # Path to the trained policy parameters
-    params_path = "./rl/policy/cart_pole_policy_2025_08_28_09_45_20.pkl"
+    params_path = "./rl/policy/acrobot_policy_2025_08_28_20_06_45.pkl"
+
+    #----------------------- POLICY SETUP -----------------------#
 
     # Create the PPO_Play object
     ppo_player = PPO_Play(env, params_path)
@@ -38,7 +49,6 @@ if __name__ == "__main__":
     #------------------------- SIMULATION -------------------------#
 
     # import the mujoco model
-    config = CartPoleConfig()
     model_path = config.model_path
     mj_model = mujoco.MjModel.from_xml_path(model_path)
     mj_data = mujoco.MjData(mj_model)
@@ -53,8 +63,10 @@ if __name__ == "__main__":
     # initial state
     mj_data.qpos = np.zeros(mj_model.nq)
     mj_data.qvel = np.zeros(mj_model.nv)
-    mj_data.qpos[0] = 0.0     # cart position
-    mj_data.qpos[1] = np.pi   # pole angle
+    # mj_data.qpos[0] = 0.0     # cart position
+    # mj_data.qpos[1] = np.pi   # pole angle
+    mj_data.qpos[0] = np.pi  # acrobot first link angle
+    mj_data.qpos[1] = 0.00   # acrobot second link angle
 
     # wall clock timing variables
     t_sim = 0.0
