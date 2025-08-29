@@ -1,3 +1,11 @@
+##
+#
+#  Simple Training Script for BRAX environments
+#  NOTE: For some reason, my desktop (4090 GPU) is better at training.  
+#        and produces better policies for the same hyperparameters.
+#
+##
+
 # jax imports
 import jax
 

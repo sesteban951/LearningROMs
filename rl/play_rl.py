@@ -1,3 +1,9 @@
+##
+#
+#  Simple Script to Simulate a trained policy in Mujoco
+#
+##
+
 # standard imports
 import numpy as np
 import time
@@ -14,8 +20,8 @@ import mujoco.mjx as mjx
 import mujoco.viewer
 
 # custom imports
-from envs.cart_pole_env import CartPoleEnv, CartPoleConfig
-from envs.acrobot_env import AcrobotEnv, AcrobotConfig
+from envs.cart_pole_env import CartPoleEnv
+from envs.acrobot_env import AcrobotEnv
 from algorithms.ppo_play import PPO_Play
 
 #################################################################
@@ -26,19 +32,20 @@ if __name__ == "__main__":
 
     # # Load the environment
     # env = envs.get_environment("cart_pole")
-    # config = CartPoleConfig()
     
     # # Path to the trained policy parameters
-    # params_path = "./rl/policy/cart_pole_policy_2025_08_28_09_45_20.pkl"
+    # params_path = "./rl/policy/cart_pole_policy.pkl"
 
     # Load the environment
     env = envs.get_environment("acrobot")
-    config = AcrobotConfig()
 
     # Path to the trained policy parameters
-    params_path = "./rl/policy/acrobot_policy_2025_08_28_23_14_03.pkl"
+    params_path = "./rl/policy/acrobot_policy.pkl"
 
     #----------------------- POLICY SETUP -----------------------#
+
+    # get the environment config
+    config = env.config
 
     # Create the PPO_Play object
     ppo_player = PPO_Play(env, params_path)
@@ -66,7 +73,7 @@ if __name__ == "__main__":
     # mj_data.qpos[0] = 0.0     # cart position
     # mj_data.qpos[1] = np.pi   # pole angle
     mj_data.qpos[0] = np.pi  # acrobot first link angle
-    mj_data.qpos[1] = 0.00   # acrobot second link angle
+    mj_data.qpos[1] = 0.0    # acrobot second link angle
 
     # wall clock timing variables
     t_sim = 0.0
