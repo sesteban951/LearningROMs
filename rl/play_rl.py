@@ -1,7 +1,7 @@
 ##
 #
 #  Simple Script to Simulate a trained policy in Mujoco
-#
+#  
 ##
 
 # standard imports
@@ -47,7 +47,7 @@ if __name__ == "__main__":
     env = envs.get_environment("hotdog_man")
 
     # Path to the trained policy parameters
-    params_path = "./rl/policy/hotdog_man_policy_2025_08_30_15_48_59.pkl"
+    params_path = "./rl/policy/hotdog_man_policy_2025_08_30_16_26_57.pkl"
 
     #----------------------- POLICY SETUP -----------------------#
 

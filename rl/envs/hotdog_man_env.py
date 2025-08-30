@@ -22,12 +22,12 @@ class HotdogManConfig:
     physics_steps_per_control_step: int = 2
 
     # Reward function coefficients
-    reward_base_height: float = 4.0
+    reward_base_height: float = 2.0
     reward_base_orient: float = 2.0
-    reward_joint_pos: float = 1.0
+    reward_joint_pos: float = 2.0
     reward_base_vel: float = 0.1
     reward_joint_vel: float = 0.1
-    reward_control: float = 1e-3
+    reward_control: float = 1e-4
 
     # Ranges for sampling initial conditions
     lb_hip_joint_pos: float = -jnp.pi  # hip joint pos limits
@@ -49,6 +49,7 @@ class HotdogManConfig:
 class HotdogManEnv(PipelineEnv):
     """
     Environment for training a planar hotdog_man walking task.
+    Close to: https://gymnasium.farama.org/environments/mujoco/walker2d/
 
     States: x = (base_pos, base_theta, join_pos, base_vel, base_theta_dot, joint_vel), shape=(14,)
     Actions: a = (hip_left, knee_left, hip_right, knee_right), the torques applied to the joints, shape=(4,)
