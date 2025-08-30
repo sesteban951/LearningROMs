@@ -22,6 +22,7 @@ import mujoco.viewer
 # custom imports
 from envs.cart_pole_env import CartPoleEnv
 from envs.acrobot_env import AcrobotEnv
+from envs.hotdog_man_env import HotdogManEnv
 from algorithms.ppo_play import PPO_Play
 
 #################################################################
@@ -36,11 +37,17 @@ if __name__ == "__main__":
     # # Path to the trained policy parameters
     # params_path = "./rl/policy/cart_pole_policy.pkl"
 
+    # # Load the environment
+    # env = envs.get_environment("acrobot")
+
+    # # Path to the trained policy parameters
+    # params_path = "./rl/policy/acrobot_policy.pkl"
+
     # Load the environment
-    env = envs.get_environment("acrobot")
+    env = envs.get_environment("hotdog_man")
 
     # Path to the trained policy parameters
-    params_path = "./rl/policy/acrobot_policy.pkl"
+    params_path = "./rl/policy/hotdog_man_policy_2025_08_30_15_48_59.pkl"
 
     #----------------------- POLICY SETUP -----------------------#
 
@@ -72,8 +79,9 @@ if __name__ == "__main__":
     mj_data.qvel = np.zeros(mj_model.nv)
     # mj_data.qpos[0] = 0.0     # cart position
     # mj_data.qpos[1] = np.pi   # pole angle
-    mj_data.qpos[0] = np.pi  # acrobot first link angle
-    mj_data.qpos[1] = 0.0    # acrobot second link angle
+    # mj_data.qpos[0] = np.pi  # acrobot first link angle
+    # mj_data.qpos[1] = 0.0    # acrobot second link angle
+    mj_data.qpos = np.array(mj_model.key_qpos[1])  # hotdog_man initial position
 
     # wall clock timing variables
     t_sim = 0.0

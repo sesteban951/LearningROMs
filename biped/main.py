@@ -25,13 +25,13 @@ class Controller:
     def compute_joint_target(self, t, state):
 
         # squats
-        p_left_des = np.array([-0.25, -0.65]).reshape(2,1)
-        p_right_des = np.array([0.15, -0.65]).reshape(2,1)
+        p_left_des = np.array([-0.20, -0.7]).reshape(2,1)
+        p_right_des = np.array([0.25, -0.7]).reshape(2,1)
         v_left_des = np.zeros((2,1))
         v_right_des = np.zeros((2,1))
 
-        p_left_des[1] += 0.05 * np.sin(2 * np.pi * 0.5 * t)
-        p_right_des[1] += 0.05 * np.sin(2 * np.pi * 0.5 * t)
+        p_left_des[1] += 0.025 * np.sin(2 * np.pi * 0.5 * t)
+        p_right_des[1] += 0.025 * np.sin(2 * np.pi * 0.5 * t)
 
         # compute the desired joint positions and velocities
         q_left_des, v_left_des = self.ik.ik_feet_in_base(p_left_des, v_left_des)
@@ -80,12 +80,12 @@ if __name__ == "__main__":
     # create an object for indexing
     idx = HotdogMan_IDX()
 
-    # set the gains
-    Kp = np.array([150, 150, 150, 150])
-    Kd = np.array([15, 15, 15, 15])
+    # set the gains (note that torques are normalized and there is a gear ratio, hence small gains)
+    Kp = np.array([1.5, 1.5, 1.5, 1.5])
+    Kd = np.array([0.04, 0.04, 0.04, 0.04])
 
     # default base position
-    q_base_init = np.array([0.0, 0.9, 0.0])
+    q_base_init = np.array([0.0, 1.0, 0.0])
     v_base_init = np.array([0.0, 0.0, 0.0])
     
     # default joint positions
@@ -108,7 +108,7 @@ if __name__ == "__main__":
 
     # simulation setup
     hz_render = 50.0
-    hz_control = 1000.0
+    hz_control = 50.0
     t_max = 15.0
 
     # compute the decimation

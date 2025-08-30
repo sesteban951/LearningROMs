@@ -8,7 +8,6 @@ from brax import envs
 
 # mujoco imports
 import mujoco
-from numpy import sin
 
 
 # struct to hold the configuration parameters
