@@ -106,7 +106,7 @@ class Pendulum:
         L = 1.0   # length of the pendulum
         m = 1.0   # mass of the pendulum
         g = 9.81  # acceleration due to gravity
-        b = 0.1   # damping coefficient        
+        b = 0.1  # damping coefficient        
 
         # extract state variables
         theta = x[0]      # angle
