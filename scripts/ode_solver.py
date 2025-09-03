@@ -274,6 +274,7 @@ class ODESolver:
 # standard imports 
 import numpy as np               # standard numpy
 import matplotlib.pyplot as plt  # standard matplotlib
+from mpl_toolkits.mplot3d import Axes3D  # registers 3D projection
 import time                      # standard time
 
 # jax imports
@@ -281,7 +282,7 @@ import jax
 import jax.random as random     # jax random number generation
 
 # custom imports
-from fom import DoubleIntegrator, Pendulum, VanDerPol
+from fom import DoubleIntegrator, Pendulum, VanDerPol, LorenzAttractor
 
 
 if __name__ == "__main__":
@@ -296,18 +297,19 @@ if __name__ == "__main__":
     print("JAX is using device:", backend)
 
     # PRNG key
-    seed = 0
+    seed = int(time.time())
     key = random.PRNGKey(seed)
     
     # create an instance of Full Order Model (FOM)
-    # rom = DoubleIntegrator()
-    rom = Pendulum()
-    # rom = VanDerPol()
+    # fom = DoubleIntegrator()
+    # fom = Pendulum()
+    # fom = VanDerPol()
+    fom = LorenzAttractor()
 
     # create the ODE solver with the desired dynamics to integrate
-    solver = ODESolver(rom)
+    solver = ODESolver(fom)
 
-    ########################### SINGLE TRAJ INTEGRATION ###########################
+    ########################### 2D SINGLE TRAJ INTEGRATION ###########################
 
     # # --- integration parameters ---
     # x0 = jnp.array([1.0, 0.0])  # initial state [position, velocity]
@@ -346,18 +348,82 @@ if __name__ == "__main__":
     # plt.tight_layout()
     # plt.show()
 
-    ########################### BATCH TRAJ INTEGRATION ###########################
+    # ########################### 2D BATCH TRAJ INTEGRATION ###########################
+
+    # # --- integration parameters ---
+    # dt = 0.01
+    # N = 500
+    # batch_size = 100_000  # number of different initial conditions
+
+    # # --- generate random initial conditions ---
+    # subkeys = random.split(key, 2)  # create 2 subkeys
+    # x1 = jax.random.uniform(subkeys[0], shape=(batch_size,), minval=-3.0, maxval=3.0)
+    # x2 = jax.random.uniform(subkeys[1], shape=(batch_size,), minval=-3.0, maxval=3.0)
+    # x0_batch = jnp.stack([x1, x2], axis=1)  # shape (batch_size, 2)
+
+    # print("x0_batch type:", type(x0_batch))
+    # print("x0_batch dtype:", x0_batch.dtype)
+    # print("x0_batch.shape:", x0_batch.shape)
+
+    # # --- propagate all trajectories in parallel ---
+    # t_traj = solver.create_time_array(dt, N)                           # shape (N+1,)
+    # t0 = time.time()
+    # # x_traj_batch = solver.forward_propagate_cl_batch(x0_batch, dt, N)  # shape (batch_size, N+1, 2)
+    # x_traj_batch = solver.forward_propagate_nc_batch(x0_batch, dt, N)  # shape (batch_size, N+1, 2)
+    # x_traj_batch.block_until_ready()  # ensure computation is done
+    # t1 = time.time()
+    # # x_traj_batch = solver.forward_propagate_cl_batch(x0_batch, dt, N)  # shape (batch_size, N+1, 2)
+    # x_traj_batch = solver.forward_propagate_nc_batch(x0_batch, dt, N)  # shape (batch_size, N+1, 2)
+    # x_traj_batch.block_until_ready()  # ensure computation is done
+    # t2 = time.time()
+    # # x_traj_batch = solver.forward_propagate_cl_batch(x0_batch, dt, N)  # shape (batch_size, N+1, 2)
+    # x_traj_batch = solver.forward_propagate_nc_batch(x0_batch, dt, N)  # shape (batch_size, N+1, 2)
+    # x_traj_batch.block_until_ready()  # ensure computation is done
+    # t3 = time.time()
+
+    # print(f"Time for first call (includes compilation): {t1 - t0:.4f} seconds")
+    # print(f"Time for second call: {t2 - t1:.4f} seconds")
+    # print(f"Time for third call: {t3 - t2:.4f} seconds")
+
+    # print("x_traj_batch type:", type(x_traj_batch))
+    # print("x_traj_batch dtype:", x_traj_batch.dtype)  
+    # print("x_traj_batch.shape:", x_traj_batch.shape)  
+
+    # # --- convert to numpy for plotting ---
+    # x_traj_batch = np.array(x_traj_batch)
+    # print("After conversion to numpy:")
+    # print("x_traj_batch type:", type(x_traj_batch))
+    # print("x_traj_batch dtype:", x_traj_batch.dtype)  
+    # print("x_traj_batch.shape:", x_traj_batch.shape)
+
+    # # --- optional: plot a few trajectories ---
+    # plt.figure(figsize=(8,4))
+
+    # # plot up to num_trajs_plot trajectories
+    # num_trajs_plot = 100
+    # for i in range(min(num_trajs_plot, batch_size)):  
+    #     plt.plot(x_traj_batch[i,:,0], x_traj_batch[i,:,1], alpha=0.6)
+
+    # plt.xlabel("x1")
+    # plt.ylabel("x2")
+    # plt.title(fom.__class__.__name__)
+    # plt.grid(True)
+    # # plt.axis('equal')
+    # plt.show()
+
+    ########################### 3D BATCH TRAJ INTEGRATION ###########################
 
     # --- integration parameters ---
     dt = 0.01
     N = 500
-    batch_size = 100_000  # number of different initial conditions
+    batch_size = 1_000  # number of different initial conditions
 
     # --- generate random initial conditions ---
-    subkeys = random.split(key, 2)  # create 2 subkeys
-    x1 = jax.random.uniform(subkeys[0], shape=(batch_size,), minval=-3.0, maxval=3.0)
-    x2 = jax.random.uniform(subkeys[1], shape=(batch_size,), minval=-3.0, maxval=3.0)
-    x0_batch = jnp.stack([x1, x2], axis=1)  # shape (batch_size, 2)
+    subkeys = random.split(key, 3)  # create 3 subkeys
+    x1 = jax.random.uniform(subkeys[0], shape=(batch_size,), minval=-20.0, maxval=20.0)
+    x2 = jax.random.uniform(subkeys[1], shape=(batch_size,), minval=-20.0, maxval=20.0)
+    x3 = jax.random.uniform(subkeys[2], shape=(batch_size,), minval=0.0, maxval=50.0)
+    x0_batch = jnp.stack([x1, x2, x3], axis=1)  # shape (batch_size, 3)
 
     print("x0_batch type:", type(x0_batch))
     print("x0_batch dtype:", x0_batch.dtype)
@@ -366,16 +432,16 @@ if __name__ == "__main__":
     # --- propagate all trajectories in parallel ---
     t_traj = solver.create_time_array(dt, N)                           # shape (N+1,)
     t0 = time.time()
-    # x_traj_batch = solver.forward_propagate_cl_batch(x0_batch, dt, N)  # shape (batch_size, N+1, 2)
-    x_traj_batch = solver.forward_propagate_nc_batch(x0_batch, dt, N)  # shape (batch_size, N+1, 2)
+    x_traj_batch = solver.forward_propagate_cl_batch(x0_batch, dt, N)  # shape (batch_size, N+1, 2)
+    # x_traj_batch = solver.forward_propagate_nc_batch(x0_batch, dt, N)  # shape (batch_size, N+1, 2)
     x_traj_batch.block_until_ready()  # ensure computation is done
     t1 = time.time()
-    # x_traj_batch = solver.forward_propagate_cl_batch(x0_batch, dt, N)  # shape (batch_size, N+1, 2)
-    x_traj_batch = solver.forward_propagate_nc_batch(x0_batch, dt, N)  # shape (batch_size, N+1, 2)
+    x_traj_batch = solver.forward_propagate_cl_batch(x0_batch, dt, N)  # shape (batch_size, N+1, 2)
+    # x_traj_batch = solver.forward_propagate_nc_batch(x0_batch, dt, N)  # shape (batch_size, N+1, 2)
     x_traj_batch.block_until_ready()  # ensure computation is done
     t2 = time.time()
-    # x_traj_batch = solver.forward_propagate_cl_batch(x0_batch, dt, N)  # shape (batch_size, N+1, 2)
-    x_traj_batch = solver.forward_propagate_nc_batch(x0_batch, dt, N)  # shape (batch_size, N+1, 2)
+    x_traj_batch = solver.forward_propagate_cl_batch(x0_batch, dt, N)  # shape (batch_size, N+1, 2)
+    # x_traj_batch = solver.forward_propagate_nc_batch(x0_batch, dt, N)  # shape (batch_size, N+1, 2)
     x_traj_batch.block_until_ready()  # ensure computation is done
     t3 = time.time()
 
@@ -394,17 +460,22 @@ if __name__ == "__main__":
     print("x_traj_batch dtype:", x_traj_batch.dtype)  
     print("x_traj_batch.shape:", x_traj_batch.shape)
 
-    # --- optional: plot a few trajectories ---
-    plt.figure(figsize=(8,4))
+    # --- optional: plot a few trajectories in 3D ---
+    fig = plt.figure(figsize=(8,6))
+    ax = fig.add_subplot(111, projection='3d')
 
-    # plot up to num_trajs_plot trajectories
-    num_trajs_plot = 100
-    for i in range(min(num_trajs_plot, batch_size)):  
-        plt.plot(x_traj_batch[i,:,0], x_traj_batch[i,:,1], alpha=0.6)
+    num_trajs_plot = 25  # number of trajectories to show
+    for i in range(min(num_trajs_plot, batch_size)):
+        ax.plot(
+            x_traj_batch[i, :, 0],  # x1(t)
+            x_traj_batch[i, :, 1],  # x2(t)
+            x_traj_batch[i, :, 2],  # x3(t)
+            alpha=0.6
+        )
 
-    plt.xlabel("x1")
-    plt.ylabel("x2")
-    plt.title(rom.__class__.__name__)
-    plt.grid(True)
-    # plt.axis('equal')
+    ax.set_xlabel("x1")
+    ax.set_ylabel("x2")
+    ax.set_zlabel("x3")
+    ax.set_title(fom.__class__.__name__)
     plt.show()
+

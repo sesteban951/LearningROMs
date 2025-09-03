@@ -72,6 +72,7 @@ class DoubleIntegrator:
 
         return jnp.array([u])  # make it shape (1,)
 
+
 ##################################################################################
 # PENDULUM
 ##################################################################################
@@ -153,7 +154,7 @@ class VanDerPol:
     Van der Pol Oscillator Dynamics Class
     """
     # initialization
-    def __init__(self, mu=1.0):
+    def __init__(self):
 
         # state and input dimensions
         self.nx = 2
@@ -187,6 +188,63 @@ class VanDerPol:
 
         # build the dynamics vector
         xdot = jnp.array([x1_dot, x2_dot])
+
+        return xdot
+    
+    # no control input for this system
+    def k(self, t, x):
+        return jnp.array([])  # shape (0,)
+    
+
+##################################################################################
+# LORENZ ATTRACTOR
+##################################################################################
+
+
+class LorenzAttractor:
+    """
+    Lorenz Attractor Dynamics Class
+    """
+    # initialization
+    def __init__(self):
+
+        # state and input dimensions
+        self.nx = 3
+        self.nu = 0
+
+    # dynamics function, continuous time
+    def f(self, t, x, u):
+        """
+        Lorenz Attractor Dynamics
+        ẋ₁ = σ (x₂ - x₁)
+        ẋ₂ = x₁ (ρ - x₃) - x₂
+        ẋ₃ = x₁ x₂ - β x₃
+
+        Args:
+            t: time
+            x: state, shape (3,)
+            u: control, shape (0,) or None
+        Returns:
+            xdot: derivative, shape (3,)
+        """
+
+        # include the parameters here to make pure functions for jitting and vmap
+        sigma = 10.0
+        rho = 28.0
+        beta = 8.0/3.0
+
+        # extract state variables
+        x1 = x[0]
+        x2 = x[1]
+        x3 = x[2]
+
+        # dynamics
+        x1_dot = sigma * (x2 - x1)
+        x2_dot = x1 * (rho - x3) - x2
+        x3_dot = x1 * x2 - beta * x3
+
+        # build the dynamics vector
+        xdot = jnp.array([x1_dot, x2_dot, x3_dot])
 
         return xdot
     
