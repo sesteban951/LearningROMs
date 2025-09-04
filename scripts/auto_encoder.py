@@ -4,30 +4,88 @@
 #
 ##
 
-import jax
-import jax.numpy as jnp
-import numpy as np
-from flax import linen as nn
-from flax import struct  # TODO: eventually store hyperparameters in a dataclass
-from flax.training import train_state
-import optax
+# jax imports
+import jax                      
+import jax.numpy as jnp         # standard jax numpy
+from functools import partial   # for partial function application
 
-from functools import partial
+# flax imports
+from flax import linen as nn           # neural network library
+from flax import struct                # immutable dataclass
+from flax.training import train_state  # simple train state for optimization
+
+# optax imports
+import optax         # gradient processing and optimization library
+
 
 ############################################################################
 # AUTOENCODER
 ############################################################################
 
-# AutoEncoder for learning latent representations
-class AutoEncoder(nn.Module):
-
-    # Hyperparameters
-    z_dim: int         # Dimension of the latent space
+# config for the AutoEncoder model
+@struct.dataclass
+class AutoEncoderConfig:
+    x_dim: int         # Dimension of the FOM state
+    z_dim: int         # Dimension of the ROM space
     f_hidden_dim: int  # Hidden layer size for dynamics model
     E_hidden_dim: int  # Hidden layer size for encoder
     D_hidden_dim: int  # Hidden layer size for decoder
 
-    # TODO: for better readability, separate Encoder, Decoder, and Dynamics into separate classes
+# AutoEncoder for learning latent representations
+class AutoEncoder(nn.Module):
+
+    # Hyperparameters
+    config: AutoEncoderConfig
+
+    # Encoder
+    @nn.compact
+    def encode(self, x_t):
+        """
+        Encoder network to map FOM state to latent space:
+            xₜ = E(zₜ)
+        """
+        x = nn.Dense(self.config.E_hidden_dim)(x_t)
+        x = nn.relu(x)
+        x = nn.Dense(self.config.E_hidden_dim)(x)
+        x = nn.relu(x)
+        z_t = nn.Dense(self.config.z_dim)(x)           # z_t = E(x_t)
+
+        return z_t
+    
+    # Decoder
+    @nn.compact
+    def decode(self, z_t):
+        """
+        Decoder network to map latent space to reconstructed FOM state:
+            x̂ₜ = D(zₜ)
+        """
+        z = z_t
+        z = nn.Dense(self.config.D_hidden_dim)(z)
+        z = nn.relu(z)
+        z = nn.Dense(self.config.D_hidden_dim)(z)
+        z = nn.relu(z)
+        x_t_hat = nn.Dense(self.config.x_dim)(z) # x_t_hat = D(z_t)
+
+        return x_t_hat
+
+    # Latent dynamics model
+    @nn.compact
+    def latent_dynamics(self, z_t):
+        """
+        Simple feedforward network to model latent dynamics:
+            zₜ₊₁ = f_θdyn(zₜ)
+        """
+        # TODO: maybe figure out how to bound these dynamics
+        # like lipschitz constraints or something
+
+        z = z_t
+        z = nn.Dense(self.config.f_hidden_dim)(z)
+        z = nn.relu(z)
+        z = nn.Dense(self.config.f_hidden_dim)(z)
+        z = nn.relu(z)
+        z_t1_hat = nn.Dense(self.config.z_dim)(z)       # z_{t+1} = f(z_{t})
+
+        return z_t1_hat
 
     # main forward pass
     @nn.compact
@@ -44,50 +102,32 @@ class AutoEncoder(nn.Module):
         """
 
         # Encoder (x_t -> z_t)
-        x = x_t
-        x = nn.Dense(self.E_hidden_dim)(x)
-        x = nn.relu(x)
-        x = nn.Dense(self.E_hidden_dim)(x)
-        x = nn.relu(x)
-        z_t = nn.Dense(self.z_dim)(x)          # z_t = E(x_t)
+        z_t = self.encode(x_t)
 
         # Decoder (z_t -> x_t_hat)
-        z = z_t
-        z = nn.Dense(self.D_hidden_dim)(z)
-        z = nn.relu(z)
-        z = nn.Dense(self.D_hidden_dim)(z)
-        z = nn.relu(z)
-        x_t_hat = nn.Dense(x_t.shape[-1])(z)   # x_t_hat = D(z_t)
+        x_t_hat = self.decode(z_t)
 
-        # Latent dynamics model (z_t -> z_t+1)
-        z = z_t
-        z = nn.Dense(self.f_hidden_dim)(z)
-        z = nn.relu(z)
-        z = nn.Dense(self.f_hidden_dim)(z)
-        z = nn.relu(z)
-        z_t1_hat = nn.Dense(self.z_dim)(z)     # z_t1 = f(z_t)
-        # TODO: consider adding figuring out how to bound this output
+        # Latent dynamics model (z_{t} -> z_{t+1})
+        z_t1_hat = self.latent_dynamics(z_t)
 
         return x_t_hat, z_t, z_t1_hat
+
 
 ############################################################################
 # LOSS FUNCTION
 ############################################################################
 
 # main loss function with all the loss components
-def loss_fn(params, model, x_t, x_t1, 
-            lambda_rec=0.8, lambda_dyn=0.2, lambda_reg=1e-4):
+def loss_fn(params, model, x_t, x_t1, opt_config):
     """
     Compute the total loss for the autoencoder model
     
     Args:
         params:      Model parameters
         model:       AutoEncoder model instance
-        x_t:         FOM Input state at time t, shape (batch_size, data_dim)
-        x_t1:        FOM Input state at time t+1, shape (batch_size, data_dim)
-        lambda_rec:  Weight for reconstruction loss
-        lambda_dyn:  Weight for latent dynamics loss
-        lambda_reg:  Weight for L2 regularization
+        x_t:         FOM Input state at time t, shape (mini_batch_size, data_dim)
+        x_t1:        FOM Input state at time t+1, shape (mini_batch_size, data_dim)
+        opt_config:  OptimizerConfig instance with options
     Returns:
         total_loss:  Combined loss value
         (loss_rec, loss_dyn, loss_reg): Tuple of individual loss components
@@ -101,32 +141,53 @@ def loss_fn(params, model, x_t, x_t1,
     _, z_t1_true, _ = model.apply(params, x_t1)
 
     # Reconstruction loss, λᵣ ‖x̂ₜ − xₜ‖²
-    loss_rec = lambda_rec * jnp.mean((x_t_hat - x_t)**2)
+    loss_rec = opt_config.lambda_rec * jnp.mean((x_t_hat - x_t)**2)
 
     # Latent dynamics loss, λ_d‖ẑₜ₊₁ − zₜ₊₁‖²
-    loss_dyn = lambda_dyn * jnp.mean((z_t1_hat - z_t1_true)**2)
+    loss_dyn = opt_config.lambda_dyn * jnp.mean((z_t1_hat - z_t1_true)**2)
 
     # L2 regularization on model parameters, λₗ * ‖θ‖²
     l2 = sum(jnp.sum(jnp.square(p)) for p in jax.tree_util.tree_leaves(params))
-    loss_reg = lambda_reg * l2
+    loss_reg = opt_config.lambda_reg * l2
 
     # Total loss
     total_loss = loss_rec + loss_dyn + loss_reg
 
     return total_loss, (loss_rec, loss_dyn, loss_reg)
 
+
 ############################################################################
 # TRAINER
 ############################################################################
 
+# struct to hold optimization parameters
+@struct.dataclass
+class OptimizerConfig:
+    
+    # Loss weights
+    lambda_rec: float     # reconstruction loss weight
+    lambda_dyn: float     # dynamics loss weight
+    lambda_reg: float     # regularization weight
+
+    # Learning rate
+    learning_rate: float  # descending step size
+
+
 # struct to hold metrics
 @struct.dataclass
 class Metrics:
-    step: int        # training step
-    loss: float      # total loss
-    loss_rec: float  # reconstruction loss
-    loss_dyn: float  # dynamics loss
-    loss_reg: float  # regularization loss
+
+    # progress metrics
+    step: int        # current training step
+    loss: float      # total loss               
+    loss_rec: float  # reconstruction loss      L_rec = λ_r * ‖x̂ₜ − xₜ‖²
+    loss_dyn: float  # dynamics loss            L_dyn = λ_d * ‖ẑₜ₊₁ − zₜ₊₁‖²
+    loss_reg: float  # regularization loss      L_reg = λₗ * ‖θ‖²
+
+    # step information
+    grad_norm: float   # gradient norm          ‖g‖₂ = ‖∇_θ L‖₂
+    update_norm: float # parameter update norm  ‖Δθ‖₂ = ‖θₖ₊₁ − θₖ‖₂
+
 
 # simple trainer class to handle training
 class Trainer:
@@ -134,16 +195,13 @@ class Trainer:
     def __init__(self, model, 
                        rng,
                        input_size, 
-                       learning_rate, 
-                       lambda_rec, 
-                       lambda_dyn, 
-                       lambda_reg):
+                       config):
 
         # initialize model and parameters
         self.model = model
-        self.lambda_rec = lambda_rec
-        self.lambda_dyn = lambda_dyn
-        self.lambda_reg = lambda_reg
+
+        # load the config
+        self.config = config
 
         # split the RNG
         rng, rng_init, rng_tab = jax.random.split(rng, 3)
@@ -154,7 +212,7 @@ class Trainer:
         params = self.model.init(rng_init, dummy_input)
 
         # setup the optimizer
-        tx = optax.adam(learning_rate)
+        tx = optax.adam(self.config.learning_rate)
 
         # create the training state (this is a snapshot of the model + optimizer)
         self.state = train_state.TrainState.create(apply_fn=self.model.apply, # model function
@@ -169,6 +227,15 @@ class Trainer:
     def train_step(self, state, x_t, x_t1, step):
         """
         Single training step
+
+        Args:
+            state:  Current TrainState (model + optimizer)
+            x_t:    FOM Input state at time t, shape (mini_batch_size, data_dim)
+            x_t1:   FOM Input state at time t+1, shape (mini_batch_size, data_dim)
+            step:   Current training step (for logging)
+        Returns:
+            new_state: Updated TrainState after applying gradients
+            metrics:   Metrics dataclass with training info
         """
 
         # define a loss function wrapper to compute gradients
@@ -176,8 +243,7 @@ class Trainer:
             tot_loss, (loss_rec, loss_dyn, loss_reg) = loss_fn(params,      # model parameters to optimize
                                                                self.model,  # model instance
                                                                x_t, x_t1,   # input data
-                                                               self.lambda_rec, self.lambda_dyn, self.lambda_reg) # hyperparameters
-
+                                                               self.config) # optimizer config
             return tot_loss, (loss_rec, loss_dyn, loss_reg)
 
         # make a function that computes the loss and its gradients
@@ -190,11 +256,19 @@ class Trainer:
         # apply the gradients to update the model parameters
         new_state = state.apply_gradients(grads=grads)
 
+        # compute the gradient norm and update norm for logging
+        grad_norm = optax.global_norm(grads)              
+        delta_params = jax.tree_util.tree_map(lambda new, old: new - old,
+                                                     new_state.params, state.params)
+        update_norm = optax.global_norm(delta_params)
+
         # update the metrics
         metrics = Metrics(step=step, 
                           loss=loss, 
                           loss_rec=loss_rec, 
                           loss_dyn=loss_dyn, 
-                          loss_reg=loss_reg)
+                          loss_reg=loss_reg,
+                          grad_norm=grad_norm,
+                          update_norm=update_norm)
 
         return new_state, metrics

@@ -4,7 +4,6 @@
 #
 ##
 
-
 # standard imports 
 import numpy as np               # standard numpy
 import matplotlib.pyplot as plt  # standard matplotlib
@@ -16,9 +15,9 @@ import jax.numpy as jnp         # standard jax numpy
 import jax.random as random     # jax random number generation
 
 # custom imports
-from fom import DoubleIntegrator, Pendulum, VanDerPol, LorenzAttractor
-from ode_solver import ODESolver
-from auto_encoder import AutoEncoder, Trainer     
+from fom import *           # full order model examples
+from ode_solver import *    # ODE solver for traj generation
+from auto_encoder import *  # autoencoder, training, configs
 
 #############################################################################
 # Helper functions
@@ -87,7 +86,7 @@ if __name__ == "__main__":
     N = 300       # number of time steps to integrate
 
     # training parameters
-    num_steps = 10_000    # number of training steps
+    num_steps = 1_500    # number of training steps
     traj_batch_size = 64  # number of trajectories per batch
     mini_batch_size = 16  # number of trajectories per mini-batch
     print_every = 50      # print every n steps
@@ -103,31 +102,34 @@ if __name__ == "__main__":
     f_hidden_dim = 64  # hidden layer size for dynamics model
     E_hidden_dim = 64  # hidden layer size for Encoder
     D_hidden_dim = 64  # hidden layer size for Decoder
+    ae_config = AutoEncoderConfig(x_dim=fom.nx,
+                                  z_dim=z_dim, 
+                                  f_hidden_dim=f_hidden_dim, 
+                                  E_hidden_dim=E_hidden_dim, 
+                                  D_hidden_dim=D_hidden_dim)
 
     # loss function weights
-    learning_rate = 5e-4  # learning rate
+    learning_rate = 1e-4  # learning rate
     lambda_rec = 0.8      # reconstruction loss weight
     lambda_dyn = 0.5      # latent dynamics loss weight
     lambda_reg = 1e-4     # L2 regularization weight
+    config = OptimizerConfig(lambda_rec=lambda_rec,
+                             lambda_dyn=lambda_dyn,
+                             lambda_reg=lambda_reg,
+                             learning_rate=learning_rate)
 
     #-----------------------------------------------------------
     # Autoencoder + Trainer
     #-----------------------------------------------------------
 
     # create the neural network model
-    ae = AutoEncoder(z_dim=z_dim, 
-                     f_hidden_dim=f_hidden_dim, 
-                     E_hidden_dim=E_hidden_dim, 
-                     D_hidden_dim=D_hidden_dim)
+    ae = AutoEncoder(config=ae_config)
 
     # create the trainer
     trainer = Trainer(ae,
                       rng_train,
                       fom.nx,
-                      learning_rate=learning_rate, 
-                      lambda_rec=lambda_rec, 
-                      lambda_dyn=lambda_dyn, 
-                      lambda_reg=lambda_reg)
+                      config=config)
 
     #-----------------------------------------------------------
     # Training loop
@@ -163,11 +165,13 @@ if __name__ == "__main__":
         # Log
         if step % print_every == 0:
             print(
-                f"step {step:04d} | "
-                f"loss={float(metrics.loss):.6f}  "
-                f"rec={float(metrics.loss_rec):.6f}  "
-                f"dyn={float(metrics.loss_dyn):.6f}  "
-                f"reg={float(metrics.loss_reg):.6f}"
+                f"step {step:05d} | "
+                f"loss={float(metrics.loss):.4f}  "
+                f"rec={float(metrics.loss_rec):.4f}  "
+                f"dyn={float(metrics.loss_dyn):.4f}  "
+                f"reg={float(metrics.loss_reg):.4f}  "
+                f"grad_norm={float(metrics.grad_norm):.4f}  "
+                f"update_norm={float(metrics.update_norm):.4f}"
             )
 
     #-----------------------------------------------------------
@@ -227,6 +231,3 @@ if __name__ == "__main__":
     plt.title("Latent dynamics prediction")
     plt.grid(True)
     plt.show()
-
-    #-----------------------------------------------------------
-
