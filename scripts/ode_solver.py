@@ -229,6 +229,7 @@ class ODESolver:
         t_inputs = jnp.arange(N) * dt  # (N,)
 
         # zero control input
+        batch_size = x0_batch.shape[0]
         u_zero = jnp.zeros((batch_size, self.nu))  # works even if nu=0
 
         # RK4 step function for the whole batch

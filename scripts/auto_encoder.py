@@ -145,9 +145,13 @@ class Trainer:
         self.lambda_dyn = lambda_dyn
         self.lambda_reg = lambda_reg
 
+        # split the RNG
+        rng, rng_init, rng_tab = jax.random.split(rng, 3)
+        self.rng = rng
+
         # initialize model parameters
         dummy_input = jnp.ones((1, input_size))  # shape (batch_size=1, data_dim)
-        params = self.model.init(rng, dummy_input)
+        params = self.model.init(rng_init, dummy_input)
 
         # setup the optimizer
         tx = optax.adam(learning_rate)
@@ -158,7 +162,7 @@ class Trainer:
                                                    tx=tx)                     # optimizer
         
         # print model summary
-        print(self.model.tabulate(rng, dummy_input))
+        print(self.model.tabulate(rng_tab, dummy_input))
 
     # single training step function
     @partial(jax.jit, static_argnums=0)
