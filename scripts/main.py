@@ -27,12 +27,17 @@ from auto_encoder import AutoEncoder, Trainer
 def generate_batch_data(key, ode_solver, batch_size, dt, N):
 
     # split the RNG
-    key, key1, key2 = random.split(key, 3)
+    key, key1, key2, key3 = random.split(key, 4)
 
     # generate random initial conditions
-    x1 = random.uniform(key1, minval=-2.0, maxval=2.0, shape=(batch_size,))
-    x2 = random.uniform(key2, minval=-2.0, maxval=2.0, shape=(batch_size,))
-    x0_batch = jnp.stack([x1, x2], axis=1)  # shape (batch_size, nx)
+    # x1 = random.uniform(key1, minval=-2.0, maxval=2.0, shape=(batch_size,))
+    # x2 = random.uniform(key2, minval=-2.0, maxval=2.0, shape=(batch_size,))
+    # x0_batch = jnp.stack([x1, x2], axis=1)  # shape (batch_size, nx)
+
+    x1 = random.uniform(key1, minval=-20.0, maxval=20.0, shape=(batch_size,))
+    x2 = random.uniform(key2, minval=-20.0, maxval=20.0, shape=(batch_size,))
+    x3 = random.uniform(key3, minval=0.0, maxval=50.0, shape=(batch_size,))
+    x0_batch = jnp.stack([x1, x2, x3], axis=1)  # shape (batch_size, nx)
 
     # solve ODE for all initial conditions in parallel
     x_traj_batch = ode_solver.forward_propagate_cl_batch(x0_batch, dt, N)
@@ -67,8 +72,8 @@ if __name__ == "__main__":
     # create an instance of Full Order Model (FOM)
     # fom = DoubleIntegrator()
     # fom = Pendulum()
-    fom = VanDerPol()
-    # fom = LorenzAttractor()
+    # fom = VanDerPol()
+    fom = LorenzAttractor()
 
     # create the ODE solver with the desired dynamics to integrate
     ode_solver = ODESolver(fom)
@@ -82,7 +87,7 @@ if __name__ == "__main__":
     N = 300       # number of time steps to integrate
 
     # training parameters
-    num_steps = 1_000    # number of training steps
+    num_steps = 10_000    # number of training steps
     traj_batch_size = 64  # number of trajectories per batch
     mini_batch_size = 16  # number of trajectories per mini-batch
     print_every = 50      # print every n steps
@@ -100,7 +105,7 @@ if __name__ == "__main__":
     D_hidden_dim = 64  # hidden layer size for Decoder
 
     # loss function weights
-    learning_rate = 1e-3  # learning rate
+    learning_rate = 5e-4  # learning rate
     lambda_rec = 0.8      # reconstruction loss weight
     lambda_dyn = 0.5      # latent dynamics loss weight
     lambda_reg = 1e-4     # L2 regularization weight
@@ -181,6 +186,8 @@ if __name__ == "__main__":
     for i in range(x_true.shape[1]):
         plt.plot(x_true[:, i], label=f"true dim {i}")
         plt.plot(x_hat[:, i], '--', label=f"recon dim {i}")
+    # plt.plot(x_true[:, 0], x_true[:, 1], label="true x")
+    # plt.plot(x_hat[:, 0], x_hat[:, 1], '--', label="recon x")
     plt.xlabel("time step")
     plt.ylabel("state value")
     plt.legend()
@@ -221,4 +228,5 @@ if __name__ == "__main__":
     plt.grid(True)
     plt.show()
 
+    #-----------------------------------------------------------
 
