@@ -1,0 +1,63 @@
+<mujoco model="paddle_ball">
+
+    <!-- Simulation settings, NOTE: the timestep seemed to make a huge difference -->
+    <option solver="Newton" integrator="implicitfast" timestep="0.001" iterations="20" ls_iterations="20" cone="elliptic"/>
+
+    <!-- Inertia is computed from geometry -->
+    <compiler inertiafromgeom="true" />
+
+    <!-- Default properties -->
+    <default>
+        <!-- 
+        solref controls how bouncy the collision is in the normal direction.
+        solreffriction controls how much energy is dissipated tangentially. -->
+        <pair solref="-10000 -25" solreffriction="0 -1000"/>
+    </default>
+    
+    <asset>
+        <texture type="skybox" builtin="flat" rgb1="0 0 0" rgb2="0 0 0" width="512" height="512"/>
+        <texture type="2d" name="groundplane" builtin="checker" mark="edge" rgb1="0.2 0.3 0.4" rgb2="0.1 0.2 0.3" markrgb="0.9 0.9 0.9" width="300" height="300"/>
+        <material name="groundplane" texture="groundplane" texuniform="true" texrepeat="5 5" reflectance="0.2"/>
+    </asset>
+
+    <!-- Memory settings (default is 1000) -->
+    <size nstack="3000" />
+
+    <worldbody>
+
+        <!-- Add light -->
+        <light pos="-0.5 0.0 2.0" dir="0 0 -1" directional="true"/>  
+
+        <!-- Ground -->
+        <geom name="ground" type="plane" size="0 0 0.01" material="groundplane"/>
+
+        <!-- Ball -->
+        <body name="ball" pos="0 0 0">
+            <joint type="slide" axis="0 0 1" range="0.05 10.0" damping="0.05"/>
+            <geom name="ball" type="sphere" size="0.05" rgba="1 0 0 1"/>
+        </body>
+
+        <!-- Paddle -->
+        <body name="paddle" pos="0 0 0">
+            <joint name="slide" type="slide" axis="0 0 1" range="0.01 1.0" damping="0.05"/>
+            <geom name="paddle" type="cylinder" size="0.15 0.01" rgba="0.2 0.2 0.2 1"/>
+        </body>
+
+    </worldbody>
+
+    <!-- Actuators -->
+    <actuator>
+        <motor joint="slide" ctrllimited="true" ctrlrange="-1 1" gear="75"/>
+    </actuator>
+
+    <!-- contacts -->
+    <contact>
+        <pair geom1="paddle" geom2="ball"/>
+    </contact>
+
+    <!-- default configuration (when you press "Load key" button) -->
+    <keyframe>
+        <key name="default" qpos="1.0 0.5" qvel="0 0" />
+    </keyframe>
+
+</mujoco>
