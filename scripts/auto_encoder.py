@@ -31,64 +31,67 @@ class AutoEncoderConfig:
     E_hidden_dim: int  # Hidden layer size for encoder
     D_hidden_dim: int  # Hidden layer size for decoder
 
-# AutoEncoder for learning latent representations
+# AutoEncoder for ROM learning
 class AutoEncoder(nn.Module):
 
-    # Hyperparameters
+    # hyperparameters config
     config: AutoEncoderConfig
 
-    # Encoder
-    @nn.compact
+    # setup the layers
+    def setup(self):
+
+        # Encoder layers
+        self.enc_fc1  = nn.Dense(self.config.E_hidden_dim, name="enc_fc1")
+        self.enc_fc2  = nn.Dense(self.config.E_hidden_dim, name="enc_fc2")
+        self.enc_out  = nn.Dense(self.config.z_dim,        name="enc_out")
+
+        # Decoder layers
+        self.dec_fc1  = nn.Dense(self.config.D_hidden_dim, name="dec_fc1")
+        self.dec_fc2  = nn.Dense(self.config.D_hidden_dim, name="dec_fc2")
+        self.dec_out  = nn.Dense(self.config.x_dim,        name="dec_out")
+
+        # Latent dynamics layers
+        self.dyn_fc1  = nn.Dense(self.config.f_hidden_dim, name="dyn_fc1")
+        self.dyn_fc2  = nn.Dense(self.config.f_hidden_dim, name="dyn_fc2")
+        self.dyn_out  = nn.Dense(self.config.z_dim,        name="dyn_out")
+
+    # Encoder (x_t -> z_t)
     def encode(self, x_t):
         """
         Encoder network to map FOM state to latent space:
             xₜ = E(zₜ)
         """
-        x = nn.Dense(self.config.E_hidden_dim)(x_t)
-        x = nn.relu(x)
-        x = nn.Dense(self.config.E_hidden_dim)(x)
-        x = nn.relu(x)
-        z_t = nn.Dense(self.config.z_dim)(x)           # z_t = E(x_t)
-
+        x = x_t
+        x = nn.relu(self.enc_fc1(x))
+        x = nn.relu(self.enc_fc2(x))
+        z_t = self.enc_out(x)
         return z_t
-    
-    # Decoder
-    @nn.compact
+
+    # Decoder (z_t -> x_t_hat)
     def decode(self, z_t):
         """
         Decoder network to map latent space to reconstructed FOM state:
             x̂ₜ = D(zₜ)
         """
         z = z_t
-        z = nn.Dense(self.config.D_hidden_dim)(z)
-        z = nn.relu(z)
-        z = nn.Dense(self.config.D_hidden_dim)(z)
-        z = nn.relu(z)
-        x_t_hat = nn.Dense(self.config.x_dim)(z) # x_t_hat = D(z_t)
-
+        z = nn.relu(self.dec_fc1(z))
+        z = nn.relu(self.dec_fc2(z))
+        x_t_hat = self.dec_out(z)
         return x_t_hat
 
-    # Latent dynamics model
-    @nn.compact
+    # Latent dynamics (z_t -> z_{t+1})
     def latent_dynamics(self, z_t):
         """
         Simple feedforward network to model latent dynamics:
             zₜ₊₁ = f_θdyn(zₜ)
         """
-        # TODO: maybe figure out how to bound these dynamics
-        # like lipschitz constraints or something
-
         z = z_t
-        z = nn.Dense(self.config.f_hidden_dim)(z)
-        z = nn.relu(z)
-        z = nn.Dense(self.config.f_hidden_dim)(z)
-        z = nn.relu(z)
-        z_t1_hat = nn.Dense(self.config.z_dim)(z)       # z_{t+1} = f(z_{t})
-
+        z = nn.relu(self.dyn_fc1(z))
+        z = nn.relu(self.dyn_fc2(z))
+        z_t1_hat = self.dyn_out(z)
         return z_t1_hat
 
-    # main forward pass
-    @nn.compact
+    # Main forward pass (for convenience)
     def __call__(self, x_t):
         """
         Forward pass through the autoencoder and dynamics model 
@@ -100,16 +103,9 @@ class AutoEncoder(nn.Module):
             z_t:     Latent representation at time t, shape (batch_size, z_dim)
             z_t1:    Predicted latent representation at time t+1, shape (batch_size, z_dim)
         """
-
-        # Encoder (x_t -> z_t)
-        z_t = self.encode(x_t)
-
-        # Decoder (z_t -> x_t_hat)
-        x_t_hat = self.decode(z_t)
-
-        # Latent dynamics model (z_{t} -> z_{t+1})
+        z_t      = self.encode(x_t)
+        x_t_hat  = self.decode(z_t)
         z_t1_hat = self.latent_dynamics(z_t)
-
         return x_t_hat, z_t, z_t1_hat
 
 
@@ -138,7 +134,7 @@ def loss_fn(params, model, x_t, x_t1, opt_config):
 
     # Encode true next state to get the target latent z_{t+1} = E(x_{t+1})
     # (call model again and take only the latent from the first block)
-    _, z_t1_true, _ = model.apply(params, x_t1)
+    z_t1_true = model.apply(params, x_t1, method=model.encode)
 
     # Reconstruction loss, λᵣ ‖x̂ₜ − xₜ‖²
     loss_rec = opt_config.lambda_rec * jnp.mean((x_t_hat - x_t)**2)
@@ -146,8 +142,8 @@ def loss_fn(params, model, x_t, x_t1, opt_config):
     # Latent dynamics loss, λ_d‖ẑₜ₊₁ − zₜ₊₁‖²
     loss_dyn = opt_config.lambda_dyn * jnp.mean((z_t1_hat - z_t1_true)**2)
 
-    # L2 regularization on model parameters, λₗ * ‖θ‖²
-    l2 = sum(jnp.sum(jnp.square(p)) for p in jax.tree_util.tree_leaves(params))
+    # L2 regularization on model parameters (no reg on the biases), λₗ * ‖θ‖²
+    l2 = sum(jnp.sum(jnp.square(p)) for p in jax.tree_util.tree_leaves(params) if p.ndim > 1)
     loss_reg = opt_config.lambda_reg * l2
 
     # Total loss
