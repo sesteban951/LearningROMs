@@ -1,7 +1,7 @@
 <mujoco model="paddle_ball">
 
     <!-- Simulation settings, NOTE: the timestep seemed to make a huge difference -->
-    <option solver="Newton" integrator="implicitfast" timestep="0.001" iterations="20" ls_iterations="20" cone="elliptic"/>
+    <option solver="Newton" integrator="RK4" timestep="0.0001" iterations="20" ls_iterations="20" cone="elliptic"/>
 
     <!-- Inertia is computed from geometry -->
     <compiler inertiafromgeom="true" />
@@ -40,14 +40,14 @@
         <!-- Paddle -->
         <body name="paddle" pos="0 0 0">
             <joint name="slide" type="slide" axis="0 0 1" range="0.01 1.0" damping="0.05"/>
-            <geom name="paddle" type="cylinder" size="0.15 0.01" rgba="0.2 0.2 0.2 1"/>
+            <geom name="paddle" type="cylinder" size="0.15 0.02" rgba="0.2 0.2 0.2 1"/>
         </body>
 
     </worldbody>
 
     <!-- Actuators -->
     <actuator>
-        <motor joint="slide" ctrllimited="true" ctrlrange="-1 1" gear="75"/>
+        <motor joint="slide" ctrllimited="true" ctrlrange="-1 1" gear="250"/>
     </actuator>
 
     <!-- contacts -->
