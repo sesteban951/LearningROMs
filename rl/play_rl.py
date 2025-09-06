@@ -54,7 +54,7 @@ if __name__ == "__main__":
     env = envs.get_environment("hopper")
 
     # Path to the trained policy parameters
-    params_path = "./rl/policy/hopper_policy_2025_09_05_17_41_24.pkl"
+    params_path = "./rl/policy/hopper_policy_2025_09_05_19_44_14.pkl"
 
     #----------------------- POLICY SETUP -----------------------#
 

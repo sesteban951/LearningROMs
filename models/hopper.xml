@@ -24,7 +24,7 @@
         <geom name="ground" type="plane" size="0 0 0.01" material="groundplane"/>
 
         <!-- Body -->
-        <body name="torso" pos="0 0 1.0">
+        <body name="torso" pos="0 0 0.0">
             <joint name="px"    type="slide" axis="1 0 0"/>
             <joint name="pz"    type="slide" axis="0 0 1"/>
             <joint name="theta" type="hinge" axis="0 1 0"/>
@@ -43,13 +43,13 @@
 
     <!-- Actutators -->
     <actuator>
-        <motor name="body_motor" joint="theta" ctrlrange="-1 1" gear="50"/>
+        <motor name="body_motor" joint="theta" ctrlrange="-1 1" gear="20"/>
         <motor name="leg_motor" joint="leg" ctrlrange="-1 1" gear="300"/>
     </actuator>
 
     <!-- default configuration (when you press "Load key" button) -->
     <keyframe>
-        <key name="default" qpos="0.0 1.5 0.0 0.0" qvel="0 0 0 0" />
+        <key name="default" qpos="0.0 1.0 0.0 0.0" qvel="0 0 0 0" />
     </keyframe>
 
 </mujoco>

@@ -40,7 +40,7 @@
         <!-- Paddle -->
         <body name="paddle" pos="0 0 0">
             <joint name="slide" type="slide" axis="0 0 1" range="0.01 1.0" damping="0.05"/>
-            <geom name="paddle" type="cylinder" size="0.15 0.02" rgba="0.2 0.2 0.2 1"/>
+            <geom name="paddle" type="cylinder" size="0.15 0.015" rgba="0.2 0.2 0.2 1"/>
         </body>
 
     </worldbody>

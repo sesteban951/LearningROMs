@@ -97,7 +97,7 @@ if __name__ == "__main__":
 
     # define hyperparameters in one place
     ppo_config = dict(
-        num_timesteps=40_000_000,      # total training timesteps
+        num_timesteps=20_000_000,      # total training timesteps
         num_evals=10,                  # number of evaluations
         reward_scaling=0.1,            # reward scale
         episode_length=300,            # max episode length
@@ -109,8 +109,8 @@ if __name__ == "__main__":
         learning_rate=5e-4,            # optimizer LR
         clipping_epsilon=0.2,          # PPO clipping epsilon
         entropy_cost=3e-4,             # entropy bonus
-        num_envs=4096,                 # parallel envs
-        batch_size=4096,               # batch size
+        num_envs=2048,                 # parallel envs
+        batch_size=2048,               # batch size
         seed=0,                        # RNG seed
     )
     

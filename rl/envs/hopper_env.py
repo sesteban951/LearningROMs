@@ -24,9 +24,9 @@ class HopperConfig:
     # Reward function coefficients
     reward_torso_height: float = 1.0   # reward for torso height
     reward_torso_angle: float = 1.0    # reward for torso angle
-    reward_leg_pos: float = 1.0        # reward for leg position
+    reward_leg_pos: float = 0.1        # reward for leg position
     reward_torso_vel: float = 0.1      # reward for zero velocity
-    reward_leg_vel: float = 0.1        # reward for zero leg velocity
+    reward_leg_vel: float = 0.01        # reward for zero leg velocity
     reward_control: float = 1e-4       # cost for control effort
 
     # Ranges for sampling initial conditions
