@@ -1,7 +1,7 @@
 <mujoco model="hopper">
 
     <!-- Simulation settings, NOTE: the timestep seemed to make a huge difference -->
-    <option solver="Newton" integrator="implicitfast" timestep="0.001" iterations="20" ls_iterations="20" cone="elliptic"/>
+    <option solver="Newton" integrator="implicitfast" timestep="0.01" iterations="20" ls_iterations="20" cone="elliptic"/>
 
     <!-- Inertia is computed from geometry -->
     <compiler inertiafromgeom="true" />
@@ -43,6 +43,7 @@
 
     <!-- Actutators -->
     <actuator>
+        <motor name="body_motor" joint="theta" ctrlrange="-1 1" gear="50"/>
         <motor name="leg_motor" joint="leg" ctrlrange="-1 1" gear="300"/>
     </actuator>
 
