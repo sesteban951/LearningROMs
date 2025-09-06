@@ -22,16 +22,18 @@ class HopperConfig:
     physics_steps_per_control_step: int = 2
 
     # Reward function coefficients
-    reward_torso_height: float = 1.0   # reward for torso height
-    reward_torso_angle: float = 1.0    # reward for torso angle
-    reward_leg_pos: float = 0.1        # reward for leg position
-    reward_torso_vel: float = 0.1      # reward for zero velocity
-    reward_leg_vel: float = 0.01        # reward for zero leg velocity
+    reward_torso_height: float = 4.0   # reward for torso height
+    reward_torso_angle: float = 0.5    # reward for torso angle
+    reward_leg_pos: float = 0.01        # reward for leg position
+    reward_torso_vel_x: float = 1.0      # reward for zero velocity
+    reward_torso_vel_z: float = 0.01      # reward for zero velocity
+    reward_torso_vel_angle: float = 0.01      # reward for zero velocity
+    reward_leg_vel: float = 0.001        # reward for zero leg velocity
     reward_control: float = 1e-4       # cost for control effort
 
     # Ranges for sampling initial conditions
-    lb_torso_height: float = 0.75
-    ub_torso_height: float = 1.25
+    lb_torso_height: float = 1.0
+    ub_torso_height: float = 2.0
     lb_torso_vel: float = -5.0
     ub_torso_vel: float =  5.0
     
@@ -120,7 +122,9 @@ class HopperEnv(PipelineEnv):
         metrics = {"reward_torso_height": jnp.array(0.0),
                    "reward_torso_angle": jnp.array(0.0),
                    "reward_leg_pos": jnp.array(0.0),
-                   "reward_torso_vel": jnp.array(0.0),
+                   "reward_torso_vel_x": jnp.array(0.0),
+                   "reward_torso_vel_z": jnp.array(0.0),
+                   "reward_torso_vel_angle": jnp.array(0.0),
                    "reward_leg_vel": jnp.array(0.0),
                    "reward_control": jnp.array(0.0)}
 
@@ -168,11 +172,17 @@ class HopperEnv(PipelineEnv):
         sin_theta = jnp.sin(theta)
         theta_angle_vec = jnp.array([cos_theta - 1.0, sin_theta]) # want (0, 0)
 
+        # desired values
+        desired_pos_z = 2.0
+        desired_vel_x = 1.0
+
         # compute error terms
-        torso_height_err = jnp.square(pos_z - 1.5).sum()
+        torso_height_err = jnp.square(pos_z - desired_pos_z).sum()
         torso_angle_err = jnp.square(theta_angle_vec).sum()
         leg_pos_err = jnp.square(leg_pos).sum()
-        torso_vel_err = jnp.square(vel_x).sum() + jnp.square(vel_z).sum() + jnp.square(theta_dot).sum()
+        torso_vel_x_err = jnp.square(vel_x - desired_vel_x).sum()
+        torso_vel_z_err = jnp.square(vel_z).sum()
+        torso_vel_angle_err = jnp.square(theta_dot).sum()
         leg_vel_err = jnp.square(leg_vel).sum()
         control_err = jnp.square(tau).sum()
 
@@ -180,19 +190,24 @@ class HopperEnv(PipelineEnv):
         reward_torso_height = -self.config.reward_torso_height * torso_height_err
         reward_torso_angle = -self.config.reward_torso_angle * torso_angle_err
         reward_leg_pos = -self.config.reward_leg_pos * leg_pos_err
-        reward_torso_vel = -self.config.reward_torso_vel * torso_vel_err
+        reward_torso_vel_x = -self.config.reward_torso_vel_x * torso_vel_x_err
+        reward_torso_vel_z = -self.config.reward_torso_vel_z * torso_vel_z_err
+        reward_torso_vel_angle = -self.config.reward_torso_vel_angle * torso_vel_angle_err
         reward_leg_vel = -self.config.reward_leg_vel * leg_vel_err
         reward_control  = -self.config.reward_control * control_err
 
         # compute the total reward
         reward = (reward_torso_height + reward_torso_angle + reward_leg_pos +
-                  reward_torso_vel + reward_leg_vel + reward_control)
-        
+                  reward_torso_vel_x + reward_torso_vel_z + reward_torso_vel_angle + 
+                  reward_leg_vel + reward_control)
+
         # update the metrics and info dictionaries
         state.metrics["reward_torso_height"] = reward_torso_height
         state.metrics["reward_torso_angle"] = reward_torso_angle
         state.metrics["reward_leg_pos"] = reward_leg_pos
-        state.metrics["reward_torso_vel"] = reward_torso_vel
+        state.metrics["reward_torso_vel_x"] = reward_torso_vel_x
+        state.metrics["reward_torso_vel_z"] = reward_torso_vel_z
+        state.metrics["reward_torso_vel_angle"] = reward_torso_vel_angle
         state.metrics["reward_leg_vel"] = reward_leg_vel
         state.metrics["reward_control"] = reward_control
         state.info["step"] += 1

@@ -54,7 +54,7 @@ if __name__ == "__main__":
     env = envs.get_environment("hopper")
 
     # Path to the trained policy parameters
-    params_path = "./rl/policy/hopper_policy_2025_09_05_19_44_14.pkl"
+    params_path = "./rl/policy/hopper_policy_2025_09_05_20_29_08.pkl"
 
     #----------------------- POLICY SETUP -----------------------#
 
@@ -82,13 +82,10 @@ if __name__ == "__main__":
     sim_step_counter = 0
 
     # initial state
-    mj_data.qpos = np.zeros(mj_model.nq)
-    mj_data.qvel = np.zeros(mj_model.nv)
-    # mj_data.qpos[0] = 0.0     # cart position
-    # mj_data.qpos[1] = np.pi   # pole angle
-    # mj_data.qpos[0] = np.pi  # acrobot first link angle
-    # mj_data.qpos[1] = 0.0    # acrobot second link angle
-    # mj_data.qpos = np.array(mj_model.key_qpos[1])  # hotdog_man initial position
+    key_name = "default"
+    key_id = mujoco.mj_name2id(mj_model, mujoco.mjtObj.mjOBJ_KEY, key_name)
+    mj_data.qpos = mj_model.key_qpos[key_id]
+    mj_data.qvel = mj_model.key_qvel[key_id]
 
     # wall clock timing variables
     t_sim = 0.0
@@ -112,7 +109,8 @@ if __name__ == "__main__":
             # query controller at the desired rate
             if sim_step_counter % sim_steps_per_ctrl == 0:
 
-                print(f"Sim Time: {t_sim:.3f} s")
+                # print(f"Sim Time: {t_sim:.3f} s")
+                print(f"  Pos: {mj_data.qvel[0]}")
 
                 # get current state
                 qpos = jnp.array(mj_data.qpos)
