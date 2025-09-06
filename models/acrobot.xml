@@ -17,7 +17,7 @@
     <worldbody>
 
         <!-- Origin -->
-        <geom name="ball" pos="0 0 1.5" type="sphere" size="0.06" rgba="0.8 0.2 0.2 1"/>
+        <geom name="ball" pos="0 0 1.5" type="sphere" size="0.06" rgba="1.0 0.424 0.047 1"/>
 
         <!-- Link 1 -->
         <body name="link1" pos="0 0 1.5">

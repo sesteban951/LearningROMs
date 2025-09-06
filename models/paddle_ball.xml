@@ -34,7 +34,7 @@
         <!-- Ball -->
         <body name="ball" pos="0 0 0">
             <joint type="slide" axis="0 0 1" range="0.05 10.0" damping="0.05"/>
-            <geom name="ball" type="sphere" size="0.05" rgba="1 0 0 1"/>
+            <geom name="ball" type="sphere" size="0.05" rgba="1.0 0.424 0.047 1"/>
         </body>
 
         <!-- Paddle -->

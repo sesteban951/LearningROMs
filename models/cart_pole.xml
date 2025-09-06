@@ -17,7 +17,7 @@
     <worldbody>
 
         <!-- Origin -->
-        <geom name="ball" pos="0 0 0.8" type="sphere" size="0.03" rgba="0.8 0.2 0.2 1"/>
+        <geom name="ball" pos="0 0 0.8" type="sphere" size="0.03" rgba="1.0 0.424 0.047 1"/>
         
         <!-- Rail -->
         <geom name="rail" pos="0 0 0.8" quat="0.707 0 0.707 0" type="capsule" size="0.02 1.5" rgba="0.8 0.8 0.8 0.5"/>
