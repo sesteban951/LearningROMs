@@ -24,6 +24,7 @@ from envs.cart_pole_env import CartPoleEnv
 from envs.acrobot_env import AcrobotEnv
 from envs.hotdog_man_env import HotdogManEnv
 from envs.hopper_env import HopperEnv
+from envs.paddle_ball_env import PaddleBallEnv
 from algorithms.ppo_play import PPO_Play
 
 #################################################################
@@ -50,11 +51,17 @@ if __name__ == "__main__":
     # # Path to the trained policy parameters
     # params_path = "./rl/policy/hotdog_man_policy_2025_08_30_16_26_57.pkl"
 
+    # # Load the environment
+    # env = envs.get_environment("hopper")
+
+    # # Path to the trained policy parameters
+    # params_path = "./rl/policy/hopper_policy.pkl"
+
     # Load the environment
-    env = envs.get_environment("hopper")
+    env = envs.get_environment("paddle_ball")
 
     # Path to the trained policy parameters
-    params_path = "./rl/policy/hopper_policy.pkl"
+    params_path = "./rl/policy/paddle_ball_policy_2025_09_06_21_28_03.pkl"
 
     #----------------------- POLICY SETUP -----------------------#
 
@@ -109,8 +116,7 @@ if __name__ == "__main__":
             # query controller at the desired rate
             if sim_step_counter % sim_steps_per_ctrl == 0:
 
-                # print(f"Sim Time: {t_sim:.3f} s")
-                print(f"  Pos: {mj_data.qvel[0]}")
+                print(f"Sim Time: {t_sim:.3f} s")
 
                 # get current state
                 qpos = jnp.array(mj_data.qpos)
