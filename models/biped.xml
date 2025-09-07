@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<mujoco model="hotdog_man">
+<mujoco model="biped">
 
 	<!-- Simulation Parameters -->
 	<option timestep="0.01" iterations="20" ls_iterations="15" solver="Newton">

@@ -7,7 +7,7 @@ import mujoco
 import glfw
 
 # custom includes 
-from indeces import HotdogMan_IDX
+from indeces import Biped_IDX
 from inverse_kinematics import InverseKinematics
 
 ##################################################################################
@@ -17,7 +17,7 @@ class Controller:
     def __init__(self, model_file):
         
         # create indexing object
-        self.idx = HotdogMan_IDX()
+        self.idx = Biped_IDX()
 
         # create IK object
         self.ik = InverseKinematics(model_file)
@@ -48,7 +48,7 @@ class Controller:
 if __name__ == "__main__":
 
     # model path
-    model_file = "./models/hotdog_man.xml"
+    model_file = "./models/biped.xml"
 
     # load the file
     model = mujoco.MjModel.from_xml_path(model_file)
@@ -78,7 +78,7 @@ if __name__ == "__main__":
     context = mujoco.MjrContext(model, mujoco.mjtFontScale.mjFONTSCALE_200)
 
     # create an object for indexing
-    idx = HotdogMan_IDX()
+    idx = Biped_IDX()
 
     # set the gains (note that torques are normalized and there is a gear ratio, hence small gains)
     Kp = np.array([1.5, 1.5, 1.5, 1.5])

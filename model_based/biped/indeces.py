@@ -5,10 +5,10 @@
 ##
 
 ####################################################################
-# HOTDOGMAN PLANAR BIPED
+# PLANAR BIPED
 ####################################################################
 
-class HotdogMan_IDX:
+class Biped_IDX:
 
     # full state indices
     class STATE:

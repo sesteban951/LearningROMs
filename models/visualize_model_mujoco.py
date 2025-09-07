@@ -9,7 +9,7 @@ import mujoco
 from mujoco.viewer import launch
 
 # Load the model from XML
-# xml_file = "./models/hotdog_man.xml"
+# xml_file = "./models/biped.xml"
 # xml_file = "./models/cart_pole.xml"
 # xml_file = "./models/acrobot.xml"
 xml_file = "./models/paddle_ball.xml"

@@ -15,7 +15,7 @@ from brax import envs
 # custom imports
 from envs.cart_pole_env import CartPoleEnv, CartPoleConfig
 from envs.acrobot_env import AcrobotEnv, AcrobotConfig
-from envs.hotdog_man_env import HotdogManEnv, HotdogManConfig
+from envs.biped_env import BipedEnv, BipedConfig
 from envs.hopper_env import HopperEnv, HopperConfig
 from envs.paddle_ball_env import PaddleBallEnv, PaddleBallConfig
 from algorithms.ppo_train import PPO_Train
@@ -27,10 +27,8 @@ if __name__ == "__main__":
 
     #----------------------- SETUP -----------------------#
 
-    # Initialize the environment
+    # Initialize the environment and PPO hyperparameters
     # env = envs.get_environment("cart_pole")
-    
-    # # define hyperparameters in one place
     # ppo_config = dict(
     #     num_timesteps=60_000_000,      # total training timesteps
     #     num_evals=10,                  # number of evaluations
@@ -49,10 +47,8 @@ if __name__ == "__main__":
     #     seed=0,                        # RNG seed
     # )
 
-    # # Initialize the environment
+    # # Initialize the environment and PPO hyperparameters
     # env = envs.get_environment("acrobot")
-
-    # # define hyperparameters in one place
     # ppo_config = dict(
     #     num_timesteps=60_000_000,      # total training timesteps
     #     num_evals=10,                  # number of evaluations
@@ -71,10 +67,8 @@ if __name__ == "__main__":
     #     seed=0,                        # RNG seed
     # )
 
-    # # Initialize the environment
-    # env = envs.get_environment("hotdog_man")
-
-    # # define hyperparameters in one place
+    # # Initialize the environment and PPO hyperparameters
+    # env = envs.get_environment("biped")
     # ppo_config = dict(
     #     num_timesteps=100_000_000,      # total training timesteps
     #     num_evals=10,                  # number of evaluations
@@ -93,10 +87,8 @@ if __name__ == "__main__":
     #     seed=0,                        # RNG seed
     # )
 
-    # Initialize the environment
+    # # Initialize the environment and PPO hyperparameters
     # env = envs.get_environment("hopper")
-
-    # # define hyperparameters in one place
     # ppo_config = dict(
     #     num_timesteps=50_000_000,      # total training timesteps
     #     num_evals=10,                  # number of evaluations
@@ -115,10 +107,8 @@ if __name__ == "__main__":
     #     seed=0,                        # RNG seed
     # )
 
-    # Initialize the environment
+    # Initialize the environment and PPO hyperparameters
     env = envs.get_environment("paddle_ball")
-    
-    # define hyperparameters in one place
     ppo_config = dict(
         num_timesteps=10_000_000,       # total training timesteps
         num_evals=10,                  # number of evaluations

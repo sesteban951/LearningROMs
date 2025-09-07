@@ -22,7 +22,7 @@ import mujoco.viewer
 # custom imports
 from envs.cart_pole_env import CartPoleEnv
 from envs.acrobot_env import AcrobotEnv
-from envs.hotdog_man_env import HotdogManEnv
+from envs.biped_env import BipedEnv
 from envs.hopper_env import HopperEnv
 from envs.paddle_ball_env import PaddleBallEnv
 from algorithms.ppo_play import PPO_Play
@@ -33,34 +33,24 @@ if __name__ == "__main__":
 
     #----------------------- POLICY IMPORT -----------------------#
 
-    # # Load the environment
+    # Load the environment and policy parameters
     # env = envs.get_environment("cart_pole")
-    
-    # # Path to the trained policy parameters
     # params_path = "./rl/policy/cart_pole_policy.pkl"
 
-    # # Load the environment
+    # Load the environment and policy parameters
     # env = envs.get_environment("acrobot")
-
-    # # Path to the trained policy parameters
     # params_path = "./rl/policy/acrobot_policy.pkl"
 
-    # # Load the environment
-    # env = envs.get_environment("hotdog_man")
+    # Load the environment and policy parameters
+    # env = envs.get_environment("biped")
+    # params_path = "./rl/policy/biped_policy_2025_08_30_16_26_57.pkl"
 
-    # # Path to the trained policy parameters
-    # params_path = "./rl/policy/hotdog_man_policy_2025_08_30_16_26_57.pkl"
-
-    # # Load the environment
+    # Load the environment and policy parameters
     # env = envs.get_environment("hopper")
-
-    # # Path to the trained policy parameters
     # params_path = "./rl/policy/hopper_policy.pkl"
 
-    # Load the environment
+    # Load the environment and policy parameters
     env = envs.get_environment("paddle_ball")
-
-    # Path to the trained policy parameters
     params_path = "./rl/policy/paddle_ball_policy.pkl"
 
     #----------------------- POLICY SETUP -----------------------#

@@ -12,11 +12,11 @@ import mujoco
 
 # struct to hold the configuration parameters
 @struct.dataclass
-class HotdogManConfig:
-    """Config dataclass for hotdog_man."""
+class BipedConfig:
+    """Config dataclass for biped."""
 
     # model path (NOTE: relative the script that calls this class)
-    model_path: str = "./models/hotdog_man.xml"
+    model_path: str = "./models/biped.xml"
 
     # number of "simulation steps" for every control input
     physics_steps_per_control_step: int = 2
@@ -46,9 +46,9 @@ class HotdogManConfig:
 
 
 # environment class
-class HotdogManEnv(PipelineEnv):
+class BipedEnv(PipelineEnv):
     """
-    Environment for training a planar hotdog_man walking task.
+    Environment for training a planar biped walking task.
     Close to: https://gymnasium.farama.org/environments/mujoco/walker2d/
 
     States: x = (base_pos, base_theta, join_pos, base_vel, base_theta_dot, joint_vel), shape=(14,)
@@ -56,10 +56,10 @@ class HotdogManEnv(PipelineEnv):
     """
 
     # initialize the environment
-    def __init__(self, config: HotdogManConfig = HotdogManConfig()):
+    def __init__(self, config: BipedConfig = BipedConfig()):
 
         # robot name
-        self.robot_name = "hotdog_man"
+        self.robot_name = "biped"
 
         # load the config
         self.config = config
@@ -84,7 +84,7 @@ class HotdogManEnv(PipelineEnv):
         # n_frames: number of sim steps per control step, dt = n_frames * xml_dt
 
         # print message
-        print(f"Initialized HotdogManEnv with model [{self.config.model_path}].")
+        print(f"Initialized BipedEnv with model [{self.config.model_path}].")
 
     # reset function
     def reset(self, rng):
@@ -260,4 +260,4 @@ class HotdogManEnv(PipelineEnv):
 
 
 # register the environment
-envs.register_environment("hotdog_man", HotdogManEnv)
+envs.register_environment("biped", BipedEnv)

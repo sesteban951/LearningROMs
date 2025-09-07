@@ -13,7 +13,7 @@ import jax.lax as lax           # for lax.scan
 from jax import jit, vmap       # jit and vmap for speed and vectorization
 
 # custom imports
-from indeces import HotdogMan_IDX
+from indeces import Biped_IDX
 
 ##################################################################################
 
@@ -21,7 +21,7 @@ from indeces import HotdogMan_IDX
 if __name__ == "__main__":
 
     # model path
-    model_file = "./models/hotdog_man.xml"
+    model_file = "./models/biped.xml"
 
     # load the model 
     mj_model = mujoco.MjModel.from_xml_path(model_file)
@@ -35,7 +35,7 @@ if __name__ == "__main__":
     print(mjx_data.qpos, type(mjx_data.qpos), mjx_data.qpos.devices())
 
     # create indexing object
-    idx = HotdogMan_IDX()
+    idx = Biped_IDX()
 
     # zero everything first
     qpos = jnp.zeros(mjx_model.nq)
