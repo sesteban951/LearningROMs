@@ -61,7 +61,7 @@ if __name__ == "__main__":
     env = envs.get_environment("paddle_ball")
 
     # Path to the trained policy parameters
-    params_path = "./rl/policy/paddle_ball_policy_2025_09_06_21_28_03.pkl"
+    params_path = "./rl/policy/paddle_ball_policy.pkl"
 
     #----------------------- POLICY SETUP -----------------------#
 

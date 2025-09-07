@@ -22,17 +22,17 @@ class PaddleBallConfig:
     physics_steps_per_control_step: int = 2
 
     # Reward function coefficients
-    reward_ball_pos: float = 1.0
-    reward_ball_vel: float = 0.1
+    reward_ball_pos: float = 2.0
+    reward_ball_vel: float = 0.05
     reward_paddle_pos: float = 1.0
-    reward_paddle_vel: float = 0.1
-    reward_control: float = 1e-3
+    reward_paddle_vel: float = 0.01
+    reward_control: float = 1e-4
 
     # Ranges for sampling initial conditions
     lb_ball_pos: float = 1.0
     ub_ball_pos: float = 2.0
     lb_ball_vel: float = -5.0
-    ub_ball_vel: float =  5.0
+    ub_ball_vel: float =  0.5
 
     lb_paddle_pos: float = 0.01
     ub_paddle_pos: float = 1.0
@@ -157,11 +157,11 @@ class PaddleBallEnv(PipelineEnv):
 
         # desired position of the ball and paddle
         des_ball_pos = 1.5
-        des_paddle_pos = 0.5
+        des_paddle_pos = 0.25
 
         # compute error terms
-        ball_pos_err = jnp.square(ball_pos).sum()
-        paddle_pos_err = jnp.square(paddle_pos).sum()
+        ball_pos_err = jnp.square(ball_pos - des_ball_pos).sum()
+        paddle_pos_err = jnp.square(paddle_pos - des_paddle_pos).sum()
         ball_vel_err = jnp.square(ball_vel).sum()
         paddle_vel_err = jnp.square(paddle_vel).sum()
         control_err = jnp.square(tau).sum()
