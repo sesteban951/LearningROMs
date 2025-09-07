@@ -1,6 +1,6 @@
 ##
 #
-# Indices for models
+# Indices for the model
 #
 ##
 
