@@ -200,7 +200,6 @@ class VanDerPol:
 # LORENZ ATTRACTOR
 ##################################################################################
 
-
 class LorenzAttractor:
     """
     Lorenz Attractor Dynamics Class
@@ -251,3 +250,73 @@ class LorenzAttractor:
     # no control input for this system
     def k(self, t, x):
         return jnp.array([])  # shape (0,)
+    
+
+##################################################################################
+# CARTPOLE
+##################################################################################
+
+class CartPole:
+    """
+    CartPole Dynamics Class
+    """
+    # initialization
+    def __init__(self):
+
+        # state and input dimensions
+        self.nx = 4
+        self.nu = 1
+
+    # dynamics function, continuous time
+    @staticmethod
+    def f(t, x, u):
+        """
+        CartPole Dynamics (underactuated robotics Ch 2.2)
+        (m_c + m_p) ẍ + m_p l cos(θ) θ̈ - m_p l sin(θ) θ̇ ² = u
+        ẍ cos(θ) + l θ̈ + g sin(θ) = 0
+
+        Args:
+            t: time 
+            x: state, shape (4,)
+            u: control, shape (1,)
+        Returns:
+            xdot: derivative, shape (4,)
+        """
+
+        # include the parameters here to make pure functions for jitting and vmap
+        m_c = 1.0   # mass of the cart
+        m_p = 0.1   # mass of the pole
+        L = 1.0     # length of the pole
+        g = 9.81    # acceleration due to gravity
+
+        # extract state variables
+        vel = x[1]         # cart velocity
+        theta = x[2]       # pole angle
+        theta_dot = x[3]   # pole angular velocity
+        u = u[0]           # control input (force on the cart)
+
+        # intermediate calculations
+        sin_theta = jnp.sin(theta)
+        cos_theta = jnp.cos(theta)
+
+        # dynamics
+        x_ddot = (u + m_p * sin_theta * (L * theta_dot**2 + g * cos_theta)) \
+                / (m_c + m_p * sin_theta**2)
+        theta_ddot = (-u * cos_theta 
+                    - m_p * L * theta_dot**2 * cos_theta * sin_theta
+                    - (m_c + m_p) * g * sin_theta) \
+                    / (L * (m_c + m_p * sin_theta**2))
+
+        # build the dynamics vector
+        x_dot = jnp.array([vel, theta_dot, x_ddot, theta_ddot])
+
+        return x_dot
+        
+    # feedback controller
+    @staticmethod
+    def k(t, x):
+        """
+        Controller
+        """
+
+        return jnp.array([0.0])  # no control for now
