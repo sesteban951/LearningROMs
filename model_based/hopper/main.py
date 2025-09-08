@@ -1,5 +1,6 @@
 # standard includes
 import numpy as np
+import math
 import time
 
 # pacakge includes
@@ -14,41 +15,129 @@ from indeces import Hopper_IDX
 class Controller:
 
     def __init__(self, model_file):
-        
+
+        # load the model file
+        model = mujoco.MjModel.from_xml_path(model_file)
+
+        # get gravity 
+        self.gravity = abs(model.opt.gravity[2])
+
+        # get some IDs
+        upper_body_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "torso")
+        lower_body_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "lower_leg")
+        self.torso_geom_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_GEOM, "torso")
+        self.foot_geom_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_GEOM, "foot")
+        leg_joint_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, "slide")
+        body_actuator_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_ACTUATOR, "body_motor")
+        leg_actuator_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_ACTUATOR, "leg_motor")
+
+        # extract upper and lower body mass
+        self.upper_body_mass = model.body_mass[upper_body_id]
+        self.lower_body_mass = model.body_mass[lower_body_id]
+
+        # extract the joint stiffness and damping
+        self.k_leg = model.jnt_stiffness[leg_joint_id]
+        self.b_leg = model.dof_damping[leg_joint_id]
+
+        # extract the gear ratio
+        self.gear_body = model.actuator_gear[body_actuator_id, 0]
+        self.gear_leg = model.actuator_gear[leg_actuator_id, 0]
+
         # create indexing object
         self.idx = Hopper_IDX()
 
         # create gain arrays 
-        # Note: that torques are normalized and there is a gear ratio, hence small gains
-        self.Kp = np.array([1.5, 1.5])
-        self.Kd = np.array([0.05, 0.05])
+        # Note: these gains do not take the gear ratio into account
+        self.kp_leg_air = 1000.0
+        self.kd_leg_air = 10.0
+        self.kp_leg_ground = 1000.0
+        self.kd_leg_ground = 1.0
 
-    def compute_input(self, t, state):
+    # simple controller
+    def compute_input(self, t, data):
 
         # extract the time and state
-        q = state[:self.idx.POS.SIZE].flatten()
-        v = state[self.idx.POS.SIZE:].flatten()
+        q = data.qpos.copy()
+        v = data.qvel.copy()
 
-        # extract controlled joints
-        q_base_act = q[self.idx.POS.EUL_Y]
-        q_leg_act = q[self.idx.POS.POS_LEG]
-        v_base_act = v[self.idx.VEL.ANG_Y]
-        v_leg_act = v[self.idx.VEL.VEL_LEG]
-        q_act = np.array([q_base_act, q_leg_act])
-        v_act = np.array([v_base_act, v_leg_act])
+        q_leg = q[self.idx.POS.POS_LEG]
+        v_leg = v[self.idx.VEL.VEL_LEG]
 
-        # default desired positions and velocities
-        q_base_des = 0.0
-        q_leg_des = 0.4 * np.sin(2 * np.pi * 2.0 * t)
-        v_base_des = 0.0
-        v_leg_des = 0.0
-        q_des = np.array([q_base_des, q_leg_des])
-        v_des = np.array([v_base_des, v_leg_des])
+        # parse contact information
+        foot_in_contact = self.parse_contact(data)
+        
+        # Ground
+        if foot_in_contact:
+
+            # feedforward forces
+            F_mass_ff = -self.gravity * (self.upper_body_mass)
+            F_spring_ff = self.k_leg * q_leg + self.b_leg * v_leg
+
+            # feedback forces
+            q_leg_des_gnd = 0.5
+            v_leg_des_gnd = 0.0
+            F_fb = ( -self.kp_leg_ground * (q_leg_des_gnd - q_leg) 
+                     -self.kd_leg_ground * (v_leg_des_gnd - v_leg))
+            
+            F_leg= 0.0
+            F_leg += F_mass_ff
+            F_leg += F_spring_ff
+            F_leg += F_fb
+
+        # Flight
+        else:
+
+            # desired leg position and velocity
+            q_leg_des = 0.3
+            v_leg_des = 0.0
+
+            # compute the force
+            F_leg = self.kp_leg_air * (q_leg_des - q_leg) + self.kd_leg_air * (v_leg_des - v_leg)
+
+        # apply gear ratio
+        F_leg /= self.gear_leg
 
         # compute the torque
-        tau = self.Kp * (q_act - q_des) + self.Kd * (v_act - v_des)
-
+        # tau = self.Kp * (q_act - q_des) + self.Kd * (v_act - v_des)
+        tau = np.zeros(2,)
+        tau[1] = F_leg
+        
         return tau
+    
+    # function to parse contact information
+    def parse_contact(self, data):
+
+        # get the contact information
+        num_contacts = data.ncon
+
+        # contact boolean 
+        foot_in_contact = False
+
+        # either "torso" or "foot" in contact
+        if num_contacts > 0:
+
+            for i in range(num_contacts):
+
+                # get the contact id
+                contact_id = i
+
+                # get the geom ids
+                geom1_id = data.contact[contact_id].geom1
+                geom2_id = data.contact[contact_id].geom2
+
+                # get the geom names
+                geom1_name = mujoco.mj_id2name(data.model, mujoco.mjtObj.mjOBJ_GEOM, geom1_id)
+                geom2_name = mujoco.mj_id2name(data.model, mujoco.mjtObj.mjOBJ_GEOM, geom2_id)
+
+                # check if the foot is in contact
+                if (geom1_name == "foot") or (geom2_name == "foot"):
+                    
+                    # set the flag
+                    foot_in_contact = True
+
+                    break
+        
+        return foot_in_contact
         
     
 ##################################################################################
@@ -98,7 +187,7 @@ if __name__ == "__main__":
     key_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_KEY, key_name)
     data.qpos = model.key_qpos[key_id]
     data.qvel = model.key_qvel[key_id]
-    
+
     # simulation setup
     hz_render = 50.0
     hz_control = 50.0
@@ -129,13 +218,8 @@ if __name__ == "__main__":
         # control at desired Hz
         if counter % decimation == 0:
 
-            # build full state
-            q = data.qpos.copy()
-            v = data.qvel.copy()
-            state = np.hstack((q, v)).reshape(-1,1)
-
             # compute the control
-            u = controller.compute_input(t_sim, state)
+            u = controller.compute_input(t_sim, data)
 
             # reset the counter
             counter = 0
