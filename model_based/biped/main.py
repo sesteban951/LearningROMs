@@ -18,7 +18,8 @@ class Controller:
 
         # load the model file
         model = mujoco.MjModel.from_xml_path(model_file)
-        
+        self.model = model
+
         # create indexing object
         self.idx = Biped_IDX()
 
@@ -43,6 +44,8 @@ class Controller:
         self.time = 0.0
         self.q = np.zeros(7)
         self.v = np.zeros(7)
+        self.q_base = np.zeros(3)
+        self.v_base = np.zeros(3)
         self.q_joints = np.zeros(4)
         self.v_joints = np.zeros(4)
 
@@ -52,11 +55,14 @@ class Controller:
         self.first_step = True
 
         # ROM variables
+        self.p_com_W = np.zeros(3)
+        self.v_com_W = np.zeros(3)
         self.T_SSP = 0.5
 
         # frame variables
-        self.swing_foot = None
         self.stance_foot = None
+        self.swing_foot = None
+        self.swing_init_pos_W = None
 
     # update interrnal state and time
     def update_state(self, data):
@@ -68,9 +74,45 @@ class Controller:
         self.q = data.qpos.copy()
         self.v = data.qvel.copy()
 
+        # update base state
+        self.q_base = self.q[self.idx.POS.POS_X : self.idx.POS.POS_X + 3].copy()
+        self.v_base = self.v[self.idx.VEL.VEL_X : self.idx.VEL.VEL_X + 3].copy()
+
         # update the joint state
         self.q_joints = self.q[self.idx.POS.POS_LH : self.idx.POS.POS_LH + 4].copy()
         self.v_joints = self.v[self.idx.VEL.VEL_LH : self.idx.VEL.VEL_LH + 4].copy()
+
+        # left and right legs
+        self.q_left_joints = self.q_joints[[self.idx.JOINT.LH, self.idx.JOINT.LK]].copy()
+        self.v_left_joints = self.v_joints[[self.idx.JOINT.LH, self.idx.JOINT.LK]].copy()
+        self.q_right_joints = self.q_joints[[self.idx.JOINT.RH, self.idx.JOINT.RK]].copy()
+        self.v_right_joints = self.v_joints[[self.idx.JOINT.RH, self.idx.JOINT.RK]].copy()
+
+    # compute the center of mass positions and velocity
+    def update_com_state(self):
+
+        # total mass
+        total_mass = np.sum(self.model.body_mass)
+
+        # position of center of mass in world frame
+        com_pos_W = np.zeros(3)
+        for i in range(model.nbody):
+            body_mass = model.body_mass[i]
+            body_pos = data.xipos[i]      # body position in world frame
+            com_pos_W += body_mass * body_pos
+        com_pos_W /= total_mass
+
+        # velocity of center of mass in world frame
+        com_vel_W = np.zeros(3)
+        for i in range(model.nbody):
+            body_mass = model.body_mass[i]
+            body_vel = data.cvel[i, 3:]   # linear velocity from cvel (6D: ang[0:3], lin[3:6])
+            com_vel_W += body_mass * body_vel
+        com_vel_W /= total_mass
+
+        # update the internal state
+        self.p_com_W = np.array([com_pos_W[0], com_pos_W[2]])  # only x, z components
+        self.v_com_W = np.array([com_vel_W[0], com_vel_W[2]])  # only x, z components
 
     # update the timing variables
     def update_timing(self):
@@ -97,29 +139,45 @@ class Controller:
 
         # left is swing, right is stance
         if (self.num_steps % 2) == 0:
+
+            # update labels
             self.swing_foot = "left"
             self.stance_foot = "right"
+
+            # update the initial swing foot position in world frame
+            self.swing_init_pos_W, _ = self.ik.fk_feet_in_world(self.q_base.reshape(3,1), self.v_base.reshape(3,1),
+                                                                self.q_left_joints.reshape(2,1), self.v_left_joints.reshape(2,1))
+
         else:
+
+            # update labels
             self.swing_foot = "right"
             self.stance_foot = "left"
+
+            # update the initial swing foot position in world frame
+            self.swing_init_pos_W, _ = self.ik.fk_feet_in_world(self.q_base.reshape(3,1), self.v_base.reshape(3,1),
+                                                                self.q_right_joints.reshape(2,1), self.v_right_joints.reshape(2,1))
 
     # compute the foot targets
     def compute_foot_targets(self):
         
         # left foot is swing
         if self.swing_foot == "left":
+            
             # right foot is stationary
-            p_right_des = np.array([[0.2], [-0.7]])
+            p_right_des = np.array([[0.2], [-0.75]])
             v_right_des = np.array([[0.0], [0.0]])
 
             px_0 = -0.2
-            pz_0 = -0.7
+            pz_0 = -0.75
             px_1 = -0.2
             pz_1 = -0.45
             px_2 = -0.2
-            pz_2 = -0.7
+            pz_2 = -0.75
             ctrl_pts_swing = np.array([[px_0, pz_0],
+                                       [px_0, pz_0],
                                        [px_1, pz_1],
+                                       [px_2, pz_2],
                                        [px_2, pz_2]])
             t_eval = np.array([self.t_phase / self.T_SSP])
             p_left_des, v_left_des = bezier_curve(t_eval, ctrl_pts_swing)
@@ -129,18 +187,21 @@ class Controller:
 
         # right foot is swing
         elif self.swing_foot == "right":
+            
             # left foot is stationary
-            p_left_des = np.array([[-0.2], [-0.7]])
+            p_left_des = np.array([[-0.2], [-0.75]])
             v_left_des = np.array([[0.0], [0.0]])
 
             px_0 = 0.2
-            pz_0 = -0.7
+            pz_0 = -0.75
             px_1 = 0.2
             pz_1 = -0.45
             px_2 = 0.2
-            pz_2 = -0.7
+            pz_2 = -0.75
             ctrl_pts_swing = np.array([[px_0, pz_0],
+                                       [px_0, pz_0],
                                        [px_1, pz_1],
+                                       [px_2, pz_2],
                                        [px_2, pz_2]])
             t_eval = np.array([self.t_phase / self.T_SSP])
             p_right_des, v_right_des = bezier_curve(t_eval, ctrl_pts_swing)
@@ -155,6 +216,9 @@ class Controller:
 
         # update the internal state
         self.update_state(data)
+
+        # update COM state
+        self.update_com_state()
 
         # update the timing variables
         self.update_timing()
@@ -172,8 +236,8 @@ class Controller:
         q_joints_des[2:4] = q_right_des.flatten()
         
         v_joints_des = np.zeros(4)
-        v_joints_des[0:2] = v_left_des.flatten()
-        v_joints_des[2:4] = v_right_des.flatten()
+        # v_joints_des[0:2] = v_left_des.flatten()
+        # v_joints_des[2:4] = v_right_des.flatten()
 
         # compute the control
         tau = (  self.kp * (q_joints_des - self.q_joints) 

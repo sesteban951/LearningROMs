@@ -64,10 +64,16 @@ class InverseKinematics:
                                q_leg,  v_leg):
 
         # unpack the base state
-        p_B = q_base[0:2]
+        p_base_W = q_base[0:2]
         theta_B = q_base[2][0]
-        v_B = v_base[0:2]
+        v_base_W = v_base[0:2]
         omega_B = v_base[2][0]
+
+        # build rotation matrices
+        R_base_W = np.array([[np.cos(theta_B), -np.sin(theta_B)],
+                             [np.sin(theta_B),  np.cos(theta_B)]])
+        Omega_skew_B = np.array([[0, -omega_B],
+                                 [omega_B, 0]])
 
         # unpack the joint angles
         q_H = q_leg[0][0]
@@ -76,11 +82,15 @@ class InverseKinematics:
         # compute the foot position in base frame
         px =  self.L1 * np.sin(q_H) + self.L2 * np.sin(q_H + q_K)
         pz = -self.L1 * np.cos(q_H) - self.L2 * np.cos(q_H + q_K)
-        p = np.array([[px], [pz]])
+        p_B = np.array([[px], [pz]])
 
         # compute the foot velocity in base frame
-        J = self.J_feet_in_base(q)
-        v = J @ v_leg
+        J = self.J_feet_in_base(q_leg)
+        v_B = J @ v_leg
+
+        # compute the foot position in world frame
+        p = p_base_W + R_base_W @ p_B
+        v = v_base_W + R_base_W @ (Omega_skew_B @ p_B + v_B)
 
         return p, v
 
