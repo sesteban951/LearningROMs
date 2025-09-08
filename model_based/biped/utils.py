@@ -1,5 +1,8 @@
 import mujoco
 import numpy as np
+import math
+
+##################################################################################
 
 class InverseKinematics:
 
@@ -39,11 +42,36 @@ class InverseKinematics:
         return J
     
     # FK, foot state in base frame
-    def fk_feet_in_base(self, q, qdot):
+    def fk_feet_in_base(self, q_leg, v_leg):
 
         # unpack the joint angles
-        q_H = q[0][0]
-        q_K = q[1][0]
+        q_H = q_leg[0][0]
+        q_K = q_leg[1][0]
+
+        # compute the foot position in base frame
+        px =  self.L1 * np.sin(q_H) + self.L2 * np.sin(q_H + q_K)
+        pz = -self.L1 * np.cos(q_H) - self.L2 * np.cos(q_H + q_K)
+        p = np.array([[px], [pz]])
+
+        # compute the foot velocity in base frame
+        J = self.J_feet_in_base(q_leg)
+        v = J @ v_leg
+
+        return p, v
+
+    # FK, foot state in world frame
+    def fk_feet_in_world(self, q_base, v_base,
+                               q_leg,  v_leg):
+
+        # unpack the base state
+        p_B = q_base[0:2]
+        theta_B = q_base[2][0]
+        v_B = v_base[0:2]
+        omega_B = v_base[2][0]
+
+        # unpack the joint angles
+        q_H = q_leg[0][0]
+        q_K = q_leg[1][0]
 
         # compute the foot position in base frame
         px =  self.L1 * np.sin(q_H) + self.L2 * np.sin(q_H + q_K)
@@ -52,7 +80,7 @@ class InverseKinematics:
 
         # compute the foot velocity in base frame
         J = self.J_feet_in_base(q)
-        v = J @ qdot
+        v = J @ v_leg
 
         return p, v
 
@@ -138,3 +166,46 @@ class InverseKinematics:
         v = np.vstack((v_base, qdot_left, qdot_right))
 
         return q, v
+
+
+##################################################################################
+
+# compute a bezier curve based on control points
+def bezier_curve(t_pts, ctrl_pts):
+    """
+    Compute Bezier Curve from control points
+
+    Args:
+        t_pts (np.array): list of time points (0 <= t <= 1)
+        ctrl_pts (np.array): Control points of shape (n, d) where n is the number of control points
+                                and d is the dimension (2 for 2D, 3 for 3D).
+    Returns: 
+        y (np.array): Points on the Bezier curve of shape (m, d)
+        ydot (np.array): Derivative of the Bezier curve at the points of shape (m, d)
+    """
+    
+    # determine the degree and dimension of the curve
+    deg = ctrl_pts.shape[0] - 1 # (e.g., deg = 1, curve is linear)
+    dim = ctrl_pts.shape[1]
+
+    # evaluation points
+    num_eval_pts = t_pts.shape[0]
+
+    # initialize the curves
+    y = np.zeros((num_eval_pts, dim))
+    ydot = np.zeros((num_eval_pts, dim))
+
+    # compute the curve
+    for i in range(deg + 1):
+        bernstein = math.comb(deg, i) * (t_pts ** i) * ((1 - t_pts) ** (deg - i))
+        y += np.outer(bernstein, ctrl_pts[i])
+
+    # precompute the scaling for the derivative
+    ctrl_diff_coeffs = deg * (ctrl_pts[1:] - ctrl_pts[:-1])
+
+    # compute the derivative
+    for i in range(deg):
+        bernstein = math.comb(deg - 1, i) * (t_pts ** i) * ((1 - t_pts) ** (deg - 1 - i))
+        ydot += np.outer(bernstein, ctrl_diff_coeffs[i])
+
+    return y, ydot

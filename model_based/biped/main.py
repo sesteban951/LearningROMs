@@ -1,8 +1,6 @@
 # standard includes
 import numpy as np
 import time          
-import math
-import matplotlib.pyplot as plt
 
 # pacakge includes
 import mujoco 
@@ -10,7 +8,7 @@ import glfw
 
 # custom includes 
 from indeces import Biped_IDX
-from inverse_kinematics import InverseKinematics
+from model_based.biped.utils import InverseKinematics, bezier_curve
 
 ##################################################################################
 
@@ -27,7 +25,7 @@ class Controller:
         # create IK object
         self.ik = InverseKinematics(model_file)
 
-        # gains (NOTE: this does not take gear reduction into account)
+        # gains (NOTE: these does not take gear reduction into account)
         self.kp = np.array([250.0, 250.0, 250.0, 250.0])
         self.kd = np.array([15.0, 15.0, 15.0, 15.0])
 
@@ -41,26 +39,128 @@ class Controller:
         self.gear_ratio_RH = model.actuator_gear[RH_actuator_id, 0]
         self.gear_ratio_RK = model.actuator_gear[RK_actuator_id, 0]
 
+        # internal state and time
+        self.time = 0.0
+        self.q = np.zeros(7)
+        self.v = np.zeros(7)
+        self.q_joints = np.zeros(4)
+        self.v_joints = np.zeros(4)
+
+        # Timing variables
+        self.t_phase = 0.0
+        self.num_steps = 0
+        self.first_step = True
+
+        # ROM variables
+        self.T_SSP = 0.5
+
+        # frame variables
+        self.swing_foot = None
+        self.stance_foot = None
+
+    # update interrnal state and time
+    def update_state(self, data):
+
+        # update time
+        self.time = data.time
+
+        # update joint positions and velocities
+        self.q = data.qpos.copy()
+        self.v = data.qvel.copy()
+
+        # update the joint state
+        self.q_joints = self.q[self.idx.POS.POS_LH : self.idx.POS.POS_LH + 4].copy()
+        self.v_joints = self.v[self.idx.VEL.VEL_LH : self.idx.VEL.VEL_LH + 4].copy()
+
+    # update the timing variables
+    def update_timing(self):
+
+        # copmute the current phase value
+        self.t_phase = self.time % self.T_SSP
+    
+        # compute the number of steps taken
+        num_steps_old = self.num_steps
+        self.num_steps = int(self.time // self.T_SSP)
+
+        # check if there has been a step increment
+        new_step = (num_steps_old != self.num_steps)
+        if (new_step == True) or (self.first_step == True):
+
+            # update the swing/stance foot info
+            self.update_frames()
+
+            # set the first step flag to false
+            self.first_step = False
+
+    # update the swing and stance foot frames
+    def update_frames(self):
+
+        # left is swing, right is stance
+        if (self.num_steps % 2) == 0:
+            self.swing_foot = "left"
+            self.stance_foot = "right"
+        else:
+            self.swing_foot = "right"
+            self.stance_foot = "left"
+
+    # compute the foot targets
+    def compute_foot_targets(self):
+        
+        # left foot is swing
+        if self.swing_foot == "left":
+            # right foot is stationary
+            p_right_des = np.array([[0.2], [-0.7]])
+            v_right_des = np.array([[0.0], [0.0]])
+
+            px_0 = -0.2
+            pz_0 = -0.7
+            px_1 = -0.2
+            pz_1 = -0.45
+            px_2 = -0.2
+            pz_2 = -0.7
+            ctrl_pts_swing = np.array([[px_0, pz_0],
+                                       [px_1, pz_1],
+                                       [px_2, pz_2]])
+            t_eval = np.array([self.t_phase / self.T_SSP])
+            p_left_des, v_left_des = bezier_curve(t_eval, ctrl_pts_swing)
+
+            p_left_des = p_left_des[0].reshape(2,1)
+            v_left_des = v_left_des[0].reshape(2,1)
+
+        # right foot is swing
+        elif self.swing_foot == "right":
+            # left foot is stationary
+            p_left_des = np.array([[-0.2], [-0.7]])
+            v_left_des = np.array([[0.0], [0.0]])
+
+            px_0 = 0.2
+            pz_0 = -0.7
+            px_1 = 0.2
+            pz_1 = -0.45
+            px_2 = 0.2
+            pz_2 = -0.7
+            ctrl_pts_swing = np.array([[px_0, pz_0],
+                                       [px_1, pz_1],
+                                       [px_2, pz_2]])
+            t_eval = np.array([self.t_phase / self.T_SSP])
+            p_right_des, v_right_des = bezier_curve(t_eval, ctrl_pts_swing)
+
+            p_right_des = p_right_des[0].reshape(2,1)
+            v_right_des = v_right_des[0].reshape(2,1)
+
+        return p_left_des, p_right_des, v_left_des, v_right_des
+
+    # compute the control input
     def compute_input(self, data):
 
-        # extract the joint positions and velocities
-        q = data.qpos.copy()
-        v = data.qvel.copy()
+        # update the internal state
+        self.update_state(data)
 
-        # extract the joint positions and velocities
-        q_joints = q[self.idx.POS.POS_LH : self.idx.POS.POS_LH + 4].copy()
-        v_joints = v[self.idx.VEL.VEL_LH : self.idx.VEL.VEL_LH + 4].copy()
+        # update the timing variables
+        self.update_timing()
 
-        # squats
-        p_left_des = np.array([-0.20, -0.7]).reshape(2,1)
-        p_right_des = np.array([0.25, -0.7]).reshape(2,1)
-        v_left_des = np.zeros((2,1))
-        v_right_des = np.zeros((2,1))
-
-        p_left_des[0] += 0.05 * math.cos(2.0 * math.pi * 0.5 * data.time)
-        p_left_des[1] += 0.05 * math.sin(2.0 * math.pi * 0.5 * data.time)
-        p_right_des[0] += 0.05 * math.cos(2.0 * math.pi * 0.5 * data.time)
-        p_right_des[1] += 0.05 * math.sin(2.0 * math.pi * 0.5 * data.time)
+        # compute desired foot positions and velocities
+        p_left_des, p_right_des, v_left_des, v_right_des = self.compute_foot_targets()
 
         # do IK
         q_left_des, v_left_des = self.ik.ik_feet_in_base(p_left_des, v_left_des)
@@ -76,7 +176,8 @@ class Controller:
         v_joints_des[2:4] = v_right_des.flatten()
 
         # compute the control
-        tau = self.kp * (q_joints_des - q_joints) + self.kd * (v_joints_des - v_joints)
+        tau = (  self.kp * (q_joints_des - self.q_joints) 
+               + self.kd * (v_joints_des - self.v_joints))
 
         # account for the gear ratio
         tau[0] /= self.gear_ratio_LH
@@ -89,45 +190,6 @@ class Controller:
 
         return tau
 
-    # compute a bezier curve based on control points
-    def bezier_curve(self, t_pts, ctrl_pts):
-        """
-        Compute Bezier Curve from control points
-
-        Args:
-            t_pts (np.array): list of time points (0 <= t <= 1)
-            ctrl_pts (np.array): Control points of shape (n, d) where n is the number of control points
-                                  and d is the dimension (2 for 2D, 3 for 3D).
-        Returns: 
-            y (np.array): Points on the Bezier curve of shape (m, d)
-            ydot (np.array): Derivative of the Bezier curve at the points of shape (m, d)
-        """
-        
-        # determine the degree and dimension of the curve
-        deg = ctrl_pts.shape[0] - 1 # (e.g., deg = 1, curve is linear)
-        dim = ctrl_pts.shape[1]
-
-        # evaluation points
-        num_eval_pts = t_pts.shape[0]
-
-        # build the curves
-        y = np.zeros((num_eval_pts, dim))
-        ydot = np.zeros((num_eval_pts, dim))
-
-        # compute the curve
-        for i in range(deg + 1):
-            bernstein = math.comb(deg, i) * (t_pts ** i) * ((1 - t_pts) ** (deg - i))
-            y += np.outer(bernstein, ctrl_pts[i])
-
-        # precompute the scaling for the derivative
-        ctrl_diff_coeffs = deg * (ctrl_pts[1:] - ctrl_pts[:-1])
-
-        # compute the derivative
-        for i in range(deg):
-            bernstein = math.comb(deg - 1, i) * (t_pts ** i) * ((1 - t_pts) ** (deg - 1 - i))
-            ydot += np.outer(bernstein, ctrl_diff_coeffs[i])
-
-        return y, ydot
 
 ##################################################################################
 
