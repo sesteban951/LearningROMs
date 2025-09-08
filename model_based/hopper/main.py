@@ -25,8 +25,6 @@ class Controller:
         # get some IDs
         upper_body_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "torso")
         lower_body_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "lower_leg")
-        self.torso_geom_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_GEOM, "torso")
-        self.foot_geom_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_GEOM, "foot")
         leg_joint_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, "slide")
         body_actuator_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_ACTUATOR, "body_motor")
         leg_actuator_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_ACTUATOR, "leg_motor")
@@ -48,10 +46,18 @@ class Controller:
 
         # create gain arrays 
         # Note: these gains do not take the gear ratio into account
+        self.kp_body = 20.0
+        self.kd_body = 1.0
+
         self.kp_leg_air = 1000.0
         self.kd_leg_air = 10.0
+
         self.kp_leg_ground = 1000.0
-        self.kd_leg_ground = 1.0
+        self.kd_leg_ground = 10.0
+
+        # raibert stepping gains
+        self.kp_raibert = 1.0
+        self.kd_raibert = 0.15
 
     # simple controller
     def compute_input(self, t, data):
@@ -60,8 +66,13 @@ class Controller:
         q = data.qpos.copy()
         v = data.qvel.copy()
 
-        q_leg = q[self.idx.POS.POS_LEG]
-        v_leg = v[self.idx.VEL.VEL_LEG]
+        # parse the state
+        pos_leg = q[self.idx.POS.POS_LEG]
+        vel_leg = v[self.idx.VEL.VEL_LEG]
+
+        vx_body = v[self.idx.VEL.VEL_X]
+        theta_body = q[self.idx.POS.EUL_Y]
+        thetadot_body = v[self.idx.VEL.ANG_Y]
 
         # parse contact information
         foot_in_contact = self.parse_contact(data)
@@ -71,36 +82,56 @@ class Controller:
 
             # feedforward forces
             F_mass_ff = -self.gravity * (self.upper_body_mass)
-            F_spring_ff = self.k_leg * q_leg + self.b_leg * v_leg
+            F_spring_ff = self.k_leg * pos_leg + self.b_leg * vel_leg
 
-            # feedback forces
-            q_leg_des_gnd = 0.5
-            v_leg_des_gnd = 0.0
-            F_fb = ( -self.kp_leg_ground * (q_leg_des_gnd - q_leg) 
-                     -self.kd_leg_ground * (v_leg_des_gnd - v_leg))
+            # feedback forces (NOTE: something is weird about the sign here)
+            pos_leg_des_gnd = 0.5
+            vel_leg_des_gnd = 0.0
+            F_fb = (- self.kp_leg_ground * (pos_leg_des_gnd - pos_leg) 
+                    - self.kd_leg_ground * (vel_leg_des_gnd - vel_leg))
             
-            F_leg= 0.0
+            # total leg force
+            F_leg = 0.0
             F_leg += F_mass_ff
             F_leg += F_spring_ff
             F_leg += F_fb
+
+            # compute the theta torque
+            T_body = 0.0
 
         # Flight
         else:
 
             # desired leg position and velocity
-            q_leg_des = 0.3
-            v_leg_des = 0.0
+            pos_leg_des_air = 0.5
+            vel_leg_des_air = 0.0
 
             # compute the force
-            F_leg = self.kp_leg_air * (q_leg_des - q_leg) + self.kd_leg_air * (v_leg_des - v_leg)
+            F_leg = (  self.kp_leg_air * (pos_leg_des_air - pos_leg) 
+                     + self.kd_leg_air * (vel_leg_des_air - vel_leg))
+            
+            # compute raibert step 
+            vx_body_des = 0.2
+            theta_des = self.kd_raibert * (vx_body_des - vx_body)
+
+            # clip the desired angle
+            theta_des = np.clip(theta_des, -0.7, 0.7)
+
+            # compute the theta torque
+            T_body = self.kp_body * (theta_des - theta_body)
 
         # apply gear ratio
+        T_body /= self.gear_body
         F_leg /= self.gear_leg
 
+        # clip
+        F_leg = np.clip(F_leg, -1, 1)
+        T_body = np.clip(T_body, -1, 1)
+
+        print(f"F_leg: {F_leg:.2f}, T_body: {T_body:.2f}, Contact: {foot_in_contact}")
+
         # compute the torque
-        # tau = self.Kp * (q_act - q_des) + self.Kd * (v_act - v_des)
-        tau = np.zeros(2,)
-        tau[1] = F_leg
+        tau = np.array([T_body, F_leg])
         
         return tau
     
@@ -191,7 +222,7 @@ if __name__ == "__main__":
     # simulation setup
     hz_render = 50.0
     hz_control = 50.0
-    t_max = 15.0
+    t_max = 60.0
 
     # compute the decimation
     sim_dt = model.opt.timestep

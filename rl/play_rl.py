@@ -46,12 +46,12 @@ if __name__ == "__main__":
     # params_path = "./rl/policy/biped_policy_2025_08_30_16_26_57.pkl"
 
     # Load the environment and policy parameters
-    # env = envs.get_environment("hopper")
-    # params_path = "./rl/policy/hopper_policy.pkl"
+    env = envs.get_environment("hopper")
+    params_path = "./rl/policy/hopper_policy.pkl"
 
     # Load the environment and policy parameters
-    env = envs.get_environment("paddle_ball")
-    params_path = "./rl/policy/paddle_ball_policy.pkl"
+    # env = envs.get_environment("paddle_ball")
+    # params_path = "./rl/policy/paddle_ball_policy.pkl"
 
     #----------------------- POLICY SETUP -----------------------#
 
