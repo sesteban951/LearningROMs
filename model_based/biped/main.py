@@ -1,6 +1,8 @@
 # standard includes
 import numpy as np
-import time
+import time          
+import math
+import matplotlib.pyplot as plt
 
 # pacakge includes
 import mujoco 
@@ -40,8 +42,99 @@ class Controller:
         q_joints_des = np.vstack((q_left_des, q_right_des)).flatten()
         v_joints_des = np.vstack((v_left_des, v_right_des)).flatten()
 
-        return q_joints_des, v_joints_des
         
+        # Example usage
+        t = np.linspace(0, 1, 100)
+        P = np.array([[0.0, 0.0],
+                    [0.0, 0.0],
+                    [0.0, 0.0],
+                    [0.1, 0.2],
+                    [0.2, 0.0],
+                    [0.2, 0.0],
+                    [0.2, 0.0]])
+
+        y, ydot = self.bezier_curve(t, P)
+
+        # --- 2x2 subplot layout ---
+        fig, axs = plt.subplots(2, 2, figsize=(10, 8))
+
+        # (1) Foot trajectory
+        axs[0,0].plot(y[:,0], y[:,1], 'b-', label="Bezier curve")
+        axs[0,0].scatter(P[:,0], P[:,1], c='r', zorder=5, label="Control points")
+        axs[0,0].legend()
+        axs[0,0].axis("equal")
+        axs[0,0].set_xlabel("x")
+        axs[0,0].set_ylabel("z")
+        axs[0,0].set_title("Foot trajectory")
+
+        # (2) dx/dt
+        axs[0,1].plot(t, ydot[:,0], 'g-', label="dx/dt")
+        axs[0,1].legend()
+        axs[0,1].set_xlabel("t")
+        axs[0,1].set_ylabel("Velocity")
+        axs[0,1].set_title("X derivative")
+
+        # (3) dz/dt
+        axs[1,0].plot(t, ydot[:,1], 'm-', label="dz/dt")
+        axs[1,0].legend()
+        axs[1,0].set_xlabel("t")
+        axs[1,0].set_ylabel("Velocity")
+        axs[1,0].set_title("Z derivative")
+
+        # (4) both derivatives together
+        axs[1,1].plot(t, ydot[:,0], 'g-', label="dx/dt")
+        axs[1,1].plot(t, ydot[:,1], 'm-', label="dz/dt")
+        axs[1,1].legend()
+        axs[1,1].set_xlabel("t")
+        axs[1,1].set_ylabel("Velocity")
+        axs[1,1].set_title("Derivatives comparison")
+
+        plt.tight_layout()
+        plt.show()
+        exit(0)
+
+        return q_joints_des, v_joints_des
+
+    # compute a bezier curve based on control points
+    def bezier_curve(self, t_pts, ctrl_pts):
+        """
+        Compute Bezier Curve from control points
+
+        Args:
+            t_pts (np.array): list of time points (0 <= t <= 1)
+            ctrl_pts (np.array): Control points of shape (n, d) where n is the number of control points
+                                  and d is the dimension (2 for 2D, 3 for 3D).
+        Returns: 
+            y (np.array): Points on the Bezier curve of shape (m, d)
+            ydot (np.array): Derivative of the Bezier curve at the points of shape (m, d)
+        """
+        
+        # determine the degree and dimension of the curve
+        deg = ctrl_pts.shape[0] - 1 # (e.g., deg = 1, curve is linear)
+        dim = ctrl_pts.shape[1]
+
+        # evaluation points
+        num_eval_pts = t_pts.shape[0]
+
+        # build the curves
+        y = np.zeros((num_eval_pts, dim))
+        ydot = np.zeros((num_eval_pts, dim))
+
+        # compute the curve
+        for i in range(deg + 1):
+            bernstein = math.comb(deg, i) * (t_pts ** i) * ((1 - t_pts) ** (deg - i))
+            y += np.outer(bernstein, ctrl_pts[i])
+
+        # precompute the scaling for the derivative
+        ctrl_diff_coeffs = deg * (ctrl_pts[1:] - ctrl_pts[:-1])
+
+        # compute the derivative
+        for i in range(deg):
+            bernstein = math.comb(deg - 1, i) * (t_pts ** i) * ((1 - t_pts) ** (deg - 1 - i))
+            ydot += np.outer(bernstein, ctrl_diff_coeffs[i])
+
+        return y, ydot
+
 ##################################################################################
 
 # main function
