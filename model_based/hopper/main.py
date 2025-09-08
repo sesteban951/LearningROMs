@@ -213,7 +213,6 @@ if __name__ == "__main__":
     controller = Controller(model_file)
 
     # set the initial state
-    key_frame_name = "default"
     key_name = "default"
     key_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_KEY, key_name)
     data.qpos = model.key_qpos[key_id]

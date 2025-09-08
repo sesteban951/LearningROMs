@@ -17,6 +17,9 @@ from inverse_kinematics import InverseKinematics
 class Controller:
 
     def __init__(self, model_file):
+
+        # load the model file
+        model = mujoco.MjModel.from_xml_path(model_file)
         
         # create indexing object
         self.idx = Biped_IDX()
@@ -24,7 +27,29 @@ class Controller:
         # create IK object
         self.ik = InverseKinematics(model_file)
 
-    def compute_joint_target(self, t, state):
+        # gains (NOTE: this does not take gear reduction into account)
+        self.kp = np.array([250.0, 250.0, 250.0, 250.0])
+        self.kd = np.array([15.0, 15.0, 15.0, 15.0])
+
+        # get the gear ratios
+        LH_actuator_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_ACTUATOR, "hip_left_motor")
+        LK_actuator_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_ACTUATOR, "knee_left_motor")
+        RH_actuator_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_ACTUATOR, "hip_right_motor")
+        RK_actuator_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_ACTUATOR, "knee_right_motor")
+        self.gear_ratio_LH = model.actuator_gear[LH_actuator_id, 0]
+        self.gear_ratio_LK = model.actuator_gear[LK_actuator_id, 0]
+        self.gear_ratio_RH = model.actuator_gear[RH_actuator_id, 0]
+        self.gear_ratio_RK = model.actuator_gear[RK_actuator_id, 0]
+
+    def compute_input(self, data):
+
+        # extract the joint positions and velocities
+        q = data.qpos.copy()
+        v = data.qvel.copy()
+
+        # extract the joint positions and velocities
+        q_joints = q[self.idx.POS.POS_LH : self.idx.POS.POS_LH + 4].copy()
+        v_joints = v[self.idx.VEL.VEL_LH : self.idx.VEL.VEL_LH + 4].copy()
 
         # squats
         p_left_des = np.array([-0.20, -0.7]).reshape(2,1)
@@ -32,68 +57,37 @@ class Controller:
         v_left_des = np.zeros((2,1))
         v_right_des = np.zeros((2,1))
 
-        p_left_des[1] += 0.025 * np.sin(2 * np.pi * 0.5 * t)
-        p_right_des[1] += 0.025 * np.sin(2 * np.pi * 0.5 * t)
+        p_left_des[0] += 0.05 * math.cos(2.0 * math.pi * 0.5 * data.time)
+        p_left_des[1] += 0.05 * math.sin(2.0 * math.pi * 0.5 * data.time)
+        p_right_des[0] += 0.05 * math.cos(2.0 * math.pi * 0.5 * data.time)
+        p_right_des[1] += 0.05 * math.sin(2.0 * math.pi * 0.5 * data.time)
 
-        # compute the desired joint positions and velocities
+        # do IK
         q_left_des, v_left_des = self.ik.ik_feet_in_base(p_left_des, v_left_des)
         q_right_des, v_right_des = self.ik.ik_feet_in_base(p_right_des, v_right_des)
 
-        q_joints_des = np.vstack((q_left_des, q_right_des)).flatten()
-        v_joints_des = np.vstack((v_left_des, v_right_des)).flatten()
-
+        # build the full desired joint vectors
+        q_joints_des = np.zeros(4)
+        q_joints_des[0:2] = q_left_des.flatten()
+        q_joints_des[2:4] = q_right_des.flatten()
         
-        # Example usage
-        t = np.linspace(0, 1, 100)
-        P = np.array([[0.0, 0.0],
-                    [0.0, 0.0],
-                    [0.0, 0.0],
-                    [0.1, 0.2],
-                    [0.2, 0.0],
-                    [0.2, 0.0],
-                    [0.2, 0.0]])
+        v_joints_des = np.zeros(4)
+        v_joints_des[0:2] = v_left_des.flatten()
+        v_joints_des[2:4] = v_right_des.flatten()
 
-        y, ydot = self.bezier_curve(t, P)
+        # compute the control
+        tau = self.kp * (q_joints_des - q_joints) + self.kd * (v_joints_des - v_joints)
 
-        # --- 2x2 subplot layout ---
-        fig, axs = plt.subplots(2, 2, figsize=(10, 8))
+        # account for the gear ratio
+        tau[0] /= self.gear_ratio_LH
+        tau[1] /= self.gear_ratio_LK
+        tau[2] /= self.gear_ratio_RH
+        tau[3] /= self.gear_ratio_RK
 
-        # (1) Foot trajectory
-        axs[0,0].plot(y[:,0], y[:,1], 'b-', label="Bezier curve")
-        axs[0,0].scatter(P[:,0], P[:,1], c='r', zorder=5, label="Control points")
-        axs[0,0].legend()
-        axs[0,0].axis("equal")
-        axs[0,0].set_xlabel("x")
-        axs[0,0].set_ylabel("z")
-        axs[0,0].set_title("Foot trajectory")
+        # clip the torques
+        tau = np.clip(tau, -1.0, 1.0)
 
-        # (2) dx/dt
-        axs[0,1].plot(t, ydot[:,0], 'g-', label="dx/dt")
-        axs[0,1].legend()
-        axs[0,1].set_xlabel("t")
-        axs[0,1].set_ylabel("Velocity")
-        axs[0,1].set_title("X derivative")
-
-        # (3) dz/dt
-        axs[1,0].plot(t, ydot[:,1], 'm-', label="dz/dt")
-        axs[1,0].legend()
-        axs[1,0].set_xlabel("t")
-        axs[1,0].set_ylabel("Velocity")
-        axs[1,0].set_title("Z derivative")
-
-        # (4) both derivatives together
-        axs[1,1].plot(t, ydot[:,0], 'g-', label="dx/dt")
-        axs[1,1].plot(t, ydot[:,1], 'm-', label="dz/dt")
-        axs[1,1].legend()
-        axs[1,1].set_xlabel("t")
-        axs[1,1].set_ylabel("Velocity")
-        axs[1,1].set_title("Derivatives comparison")
-
-        plt.tight_layout()
-        plt.show()
-        exit(0)
-
-        return q_joints_des, v_joints_des
+        return tau
 
     # compute a bezier curve based on control points
     def bezier_curve(self, t_pts, ctrl_pts):
@@ -173,42 +167,21 @@ if __name__ == "__main__":
     # create an object for indexing
     idx = Biped_IDX()
 
-    # set the gains (note that torques are normalized and there is a gear ratio, hence small gains)
-    Kp = np.array([1.5, 1.5, 1.5, 1.5])
-    Kd = np.array([0.04, 0.04, 0.04, 0.04])
-
-    # default base position
-    q_base_init = np.array([0.0, 1.0, 0.0])
-    v_base_init = np.array([0.0, 0.0, 0.0])
-    
-    # default joint positions
-    default_joints = np.array([0.5,-0.5, 0.1, -0.5])
-    q_joints_init = default_joints.copy()
-    v_joints_init = np.zeros(4)
-
     # create controller object
     control = Controller(model_file)
 
     # set the initial state
-    data.qpos[idx.POS.POS_X] = q_base_init[0]
-    data.qpos[idx.POS.POS_Z] = q_base_init[1]
-    data.qpos[idx.POS.EUL_Y] = q_base_init[2]
-    data.qpos[idx.POS.POS_LH : idx.POS.POS_LH + 4] = q_joints_init
-    data.qvel[idx.VEL.VEL_X] = v_base_init[0]
-    data.qvel[idx.VEL.VEL_Z] = v_base_init[1]
-    data.qvel[idx.VEL.ANG_Y] = v_base_init[2]
-    data.qvel[idx.VEL.VEL_LH : idx.VEL.VEL_LH + 4] = v_joints_init
+    key_name = "standing"
+    key_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_KEY, key_name)
+    data.qpos = model.key_qpos[key_id]
+    data.qvel = model.key_qvel[key_id]
 
     # simulation setup
     hz_render = 50.0
-    hz_control = 50.0
     t_max = 15.0
 
     # compute the decimation
     sim_dt = model.opt.timestep
-    control_dt = 1.0 / hz_control
-    decimation = round(control_dt / sim_dt)
-    counter = 0
 
     # wall clock timing variables
     t_sim = 0.0
@@ -226,36 +199,21 @@ if __name__ == "__main__":
         # get the current sim time and state
         t_sim = data.time
 
-        # build full state
-        q = data.qpos.copy()
-        v = data.qvel.copy()
-        state = np.hstack((q, v)).reshape(-1,1)
+        # compute the inputs
+        tau = control.compute_input(data)
 
-        # get the current joint positions and velocities
-        q_joints = data.qpos[idx.POS.POS_LH : idx.POS.POS_LH + 4].copy()
-        v_joints = data.qvel[idx.VEL.VEL_LH : idx.VEL.VEL_LH + 4].copy()
+        data.ctrl[:] = tau
 
-        # control at desired Hz
-        if counter % decimation == 0:
-
-            # default desired positions and velocities
-            # q_joints_des = default_joints
-            # v_joints_des = np.zeros(4)
-
-            # compute the desired joint positions and velocities
-            q_joints_des, v_joints_des = control.compute_joint_target(t_sim, state)
-
-            # compute the control
-            u = Kp * (q_joints_des - q_joints) + Kd * (v_joints_des - v_joints)
-
-            # reset the counter
-            counter = 0
-
-        # step the counter
-        counter += 1
+        # hold the base in the air
+        data.qpos[idx.POS.POS_X] = 0.0
+        data.qpos[idx.POS.POS_Z] = 1.0
+        data.qpos[idx.POS.EUL_Y] = 0.0
+        data.qvel[idx.VEL.VEL_X] = 0.0
+        data.qvel[idx.VEL.VEL_Z] = 0.0
+        data.qvel[idx.VEL.ANG_Y] = 0.0
 
         # set the torques
-        data.ctrl[:] = u
+        data.ctrl[:] = tau
 
         # step the simulation
         mujoco.mj_step(model, data)

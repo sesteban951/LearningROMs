@@ -2,7 +2,7 @@
 <mujoco model="biped">
 
 	<!-- Simulation Parameters -->
-	<option timestep="0.01" iterations="20" ls_iterations="15" solver="Newton">
+	<option timestep="0.002" iterations="20" ls_iterations="15" solver="Newton">
 		<flag eulerdamp="disable"/>
 	</option>
 
@@ -11,7 +11,7 @@
 
 	<!-- Default properties -->
     <default>
-        <joint damping="0.1" armature="0.01" frictionloss="0.1"/>
+        <joint damping="0.1" armature="0.00" frictionloss="0.1"/>
     </default>
 
     <asset>
@@ -39,13 +39,11 @@
 
             <!-- Left leg -->
             <body name="left_thigh" pos="0 0.09 0">
-                <!-- <inertial pos="0 0 -0.2" mass="2.0" diaginertia="0.5 0.5 0.5"/> -->
                 <geom name="left_thigh" type="capsule" size="0.045 0.2" pos="0 0 -0.2" density="500" rgba="0.9 0.9 0.9 0.5" conaffinity="1" contype="1"/>
                 <joint name="left_hip_joint" type="hinge" axis="0 -1 0" pos="0 0 0" range="-90.0 90.0"/>
 
                 <!-- Left Shin -->
                 <body name="left_shin" pos="0 0 -0.4">
-                    <!-- <inertial pos="0 0 -0.2" mass="1.0" diaginertia="0.5 0.5 0.5"/> -->
                     <geom name="left_shin" type="capsule" size="0.045 0.2" pos="0 0 -0.2" density="500" rgba="0.9 0.9 0.9 0.5" conaffinity="1" contype="1"/>
                     <joint name="left_knee_joint" type="hinge" axis="0 -1 0" pos="0 0 0" range="-140.0 0.0"/>
                 </body>
@@ -54,13 +52,11 @@
 
             <!-- Right leg -->
             <body name="right_thigh" pos="0 -0.09 0">
-                <!-- <inertial pos="0 0 -0.2" mass="2.0" diaginertia="0.5 0.5 0.5"/> -->
                 <geom name="right_thigh" type="capsule" size="0.045 0.2" pos="0 0 -0.2" density="500" rgba="0.9 0.9 0.9 0.5" conaffinity="1" contype="1"/>
                 <joint name="right_hip_joint" type="hinge" axis="0 -1 0" pos="0 0 0" range="-90.0 90.0"/>
 
                 <!-- Right Shin -->
                 <body name="right_shin" pos="0 0 -0.4">
-                    <!-- <inertial pos="0 0 -0.2" mass="1.0" diaginertia="0.5 0.5 0.5"/> -->
                     <geom name="right_shin" type="capsule" size="0.045 0.2" pos="0 0 -0.2" density="500" rgba="0.9 0.9 0.9 0.5" conaffinity="1" contype="1"/>
                     <joint name="right_knee_joint" type="hinge" axis="0 -1 0" pos="0 0 0" range="-140.0 0.0"/>
                 </body>
@@ -72,10 +68,10 @@
 
     <!-- Actuators -->
 	<actuator>
-		<motor name="hip_left_motor" joint="left_hip_joint" ctrllimited="false" ctrlrange="-1 1" gear="50"/>
-    	<motor name="knee_left_motor" joint="left_knee_joint" ctrllimited="false" ctrlrange="-1 1" gear="50"/>
-		<motor name="hip_right_motor" joint="right_hip_joint" ctrllimited="false" ctrlrange="-1 1" gear="50"/>
-		<motor name="knee_right_motor" joint="right_knee_joint" ctrllimited="false" ctrlrange="-1 1" gear="50"/>
+		<motor name="hip_left_motor" joint="left_hip_joint" ctrllimited="true" ctrlrange="-1 1" gear="250"/>
+    	<motor name="knee_left_motor" joint="left_knee_joint" ctrllimited="true" ctrlrange="-1 1" gear="250"/>
+		<motor name="hip_right_motor" joint="right_hip_joint" ctrllimited="true" ctrlrange="-1 1" gear="250"/>
+		<motor name="knee_right_motor" joint="right_knee_joint" ctrllimited="true" ctrlrange="-1 1" gear="250"/>
 	</actuator>
 
     <!-- default configuration (when you press "Load key" button) -->

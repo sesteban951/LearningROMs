@@ -43,8 +43,8 @@
 
     <!-- Actutators -->
     <actuator>
-        <motor name="body_motor" joint="theta" ctrlrange="-1 1" gear="20"/>
-        <motor name="leg_motor" joint="leg" ctrlrange="-1 1" gear="300"/>
+        <motor name="body_motor" joint="theta" ctrllimited="true" ctrlrange="-1 1" gear="20"/>
+        <motor name="leg_motor" joint="leg" ctrllimited="true" ctrlrange="-1 1" gear="300"/>
     </actuator>
 
     <!-- default configuration (when you press "Load key" button) -->
