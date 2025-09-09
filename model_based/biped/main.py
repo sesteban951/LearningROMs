@@ -1,5 +1,6 @@
 # standard includes
 import numpy as np
+import scipy as sp
 import time          
 
 # pacakge includes
@@ -30,8 +31,8 @@ class Controller:
         self.ik = InverseKinematics(model_file)
 
         # gains (NOTE: these does not take gear reduction into account)
-        self.kp = np.array([300.0, 300.0, 300.0, 300.0])
-        self.kd = np.array([15.0, 15.0, 15.0, 15.0])
+        self.kp = np.array([250.0, 250.0, 250.0, 250.0])
+        self.kd = np.array([5.0, 5.0, 5.0, 5.0])
 
         # get foot locations
         self.left_foot_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_SITE, "left_foot_site")
@@ -60,6 +61,9 @@ class Controller:
         self.t_phase = 0.0
         self.num_steps = 0
         self.first_step = True
+        self.T_SSP = 0.45
+        self.T_DSP = 0.0
+        self.T = self.T_SSP + self.T_DSP
 
         # frame variables
         self.stance_foot = None
@@ -70,25 +74,45 @@ class Controller:
         # ROM variables
         self.p_com_W = np.zeros(3)
         self.v_com_W = np.zeros(3)
-        self.T_SSP = 0.3
 
         # foot variables
-        self.z_apex = 0.075         # maximum foot height achieved during swing
-        self.z_base = 0.75         # nominal height of the base from the ground
-        self.z_foot_offset = 0.05  # offset of the foot from the ground for foot geom
+        self.z_apex = 0.04           # maximum foot height achieved during swing
+        self.z_base = 0.75           # nominal height of the base from the ground
+        self.z_foot_offset = 0.045   # offset of the foot from the ground for foot geom
 
-        # foot placement gains
-        self.kp_foot = 1.8
-        self.kd_foot = 0.05
+        # compute LIP parameters
+        self.lam = np.sqrt(9.81 / self.z_base)  # natural frequency
+        self.A = np.array([[0,           1],    # LIP drift matrix
+                           [self.lam**2, 0]])
+        
+        # create lambda function for hyperbolic trig
+        self.coth = lambda x: (np.exp(2 * x) + 1) / (np.exp(2 * x) - 1)
+        self.tanh = lambda x: (np.exp(2 * x) - 1) / (np.exp(2 * x) + 1)
+        self.sech = lambda x: 1 / np.cosh(x)
 
-        # command scaling
-        self.vx_cmd_scale = 1.0   # m/s per unit joystick command
-        self.vx_cmd = 0.0         # desired forward velocity (used with joystick if connected)
-        self.vx_cmd_alpha = 0.01  # low-pass filter, (very low b/c fast control loop)
+        # Period-1 orbit parameters
+        self.sigma_P1 = self.lam * self.coth(0.5 * self.lam * self.T_SSP)
+
+        # LIP foot placement gains (deadbeat, but can use anything else, e.g., LQR or Pole placement)
+        self.Kp_db = 1.0
+        self.Kd_db = self.T_DSP + (1/self.lam) * self.coth(self.lam * self.T_SSP)  # deadbeat gains
+
+        # Raibert foot placement gains
+        self.Kp_foot = 1.8
+        self.Kd_foot = 0.05
+
+        # which controller to use
+        self.foot_placement_ctrl = "LIP"   # "Raibert" or "LIP"
+        # self.foot_placement_ctrl = "Raibert"   # "Raibert" or "LIP"
+
+        # velocity command parameters
+        self.vx_cmd_scale = 0.5    # m/s per unit joystick command
+        self.vx_cmd = 0.0          # desired forward velocity (used with joystick if connected)
         self.vx_cmd_prev = 0.0    
         self.vx_cmd_curr = 0.0    
+        self.vx_cmd_alpha = 0.01   # low-pass filter, (very low b/c fast control loop)
 
-    # update interrnal state and time
+    # update internal state and time
     def update_state(self, data):
 
         # update time
@@ -199,9 +223,12 @@ class Controller:
             self.joystick.update()
 
             # get input
-            vx_cmd_raw = -self.joystick.LS_Y
+            vx_cmd_raw = self.joystick.LS_Y
             self.vx_cmd_curr = self.vx_cmd_scale * vx_cmd_raw
-            self.vx_cmd = self.vx_cmd_alpha * self.vx_cmd_curr + (1.0 - self.vx_cmd_alpha) * self.vx_cmd_prev
+
+            # low-pass filter
+            self.vx_cmd = (  self.vx_cmd_alpha * self.vx_cmd_curr 
+                           + (1.0 - self.vx_cmd_alpha) * self.vx_cmd_prev)
             self.vx_cmd_prev = self.vx_cmd
 
             # deadband
@@ -222,28 +249,49 @@ class Controller:
         v_com_ST = self.v_com_W
 
         # extract the x, z components
-        px_com = p_com_ST[0]
-        vx_com = v_com_ST[0]
+        p_com = p_com_ST[0]
+        v_com = v_com_ST[0]
 
+        # use LIP controller
+        if self.foot_placement_ctrl == "LIP":
 
-        print(f"vx_cmd: {self.vx_cmd:.2f} m/s, vx_com: {vx_com:.2f} m/s")
+            # compute the Robot preimpact estimate using LIP dynamics
+            x_com = np.array([[p_com], [v_com]])
+            x_com_pre = sp.linalg.expm(self.A * (self.T_SSP - self.t_phase)) @ x_com
+            p_com_pre = x_com_pre[0][0]
+            v_com_pre = x_com_pre[1][0]
 
+            # compute the LIP preimpact state
+            p_com_LIP_pre = (self.vx_cmd * self.T) / (2.0 + self.T_DSP * self.sigma_P1)
+            v_com_LIP_pre =  self.sigma_P1 * (self.vx_cmd * self.T) / (2.0 + self.T_DSP * self.sigma_P1)
 
-        # foot placement controller
-        u = (  self.kp_foot * px_com 
-             + self.kd_foot * (vx_com - self.vx_cmd) 
-             + 0.5 * self.vx_cmd * self.T_SSP)
+            # LIP foot placement (deadbeat control)
+            u_ff = self.vx_cmd * self.T_SSP
+            u_fb = self.Kp_db * (p_com_pre - p_com_LIP_pre) + self.Kd_db * (v_com_pre - v_com_LIP_pre)
+            u = u_ff + u_fb
 
-        # compute the foot placement
+        # use Raibert controller
+        elif self.foot_placement_ctrl == "Raibert":
+
+            # Raibert foot placement controller
+            u = (  self.Kp_foot * p_com 
+                 + self.Kd_foot * (v_com - self.vx_cmd) 
+                 + 0.5 * self.vx_cmd * self.T_SSP)
+        
+        print(f"vx_cmd: {self.vx_cmd:.2f} m/s, vx_com: {v_com:.2f} m/s")
+
+        # compute the foot placement (5th order use 8/3, 7th order use 16/5)
         swing_init_W = swing_init_pos_W
         swing_target_W = stance_pos_W + np.array([u, 0.0])
         swing_middle_W = np.array([(swing_init_W[0] + swing_target_W[0]) / 2.0, 
-                                   (8.0/3.0) * (self.z_apex + self.z_foot_offset)])
+                                   (16.0/5.0) * (self.z_apex + self.z_foot_offset)])
         
         # compute the swing foot trajectory using a Bezier curve
         ctrl_pts_swing = np.array([swing_init_W,
                                    swing_init_W,
+                                   swing_init_W,
                                    swing_middle_W,
+                                   swing_target_W,
                                    swing_target_W,
                                    swing_target_W])
         t_eval = np.array([self.t_phase / self.T_SSP])
@@ -303,11 +351,11 @@ class Controller:
 
         # do IK
         q_des, _ = self.ik.ik_world(p_base_des_W, o_base_des_W, p_left_des_W, p_right_des_W,
-                                    v_base_des_W, w_base_des_W, v_left_des_W, v_right_des_W)
+                                        v_base_des_W, w_base_des_W, v_left_des_W, v_right_des_W)
 
         # extract the desired joint positions and velocities
         q_joints_des = q_des[3:7].flatten()
-        v_joints_des = np.zeros_like(q_joints_des)
+        v_joints_des = np.zeros(4)
 
         # compute the control
         tau = (  self.kp * (q_joints_des - self.q_joints) 
