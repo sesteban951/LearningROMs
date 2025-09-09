@@ -80,6 +80,8 @@ class Controller:
         # Ground
         if foot_in_contact:
 
+            # TODO: implement state machine. Let the robot compress, then when beginning to extend, switch to thursting
+
             # feedforward forces
             F_mass_ff = -self.gravity * (self.upper_body_mass)
             F_spring_ff = self.k_leg * pos_leg + self.b_leg * vel_leg
@@ -101,6 +103,8 @@ class Controller:
 
         # Flight
         else:
+
+            # TODO: implement a raibert controller: "Legged Robots that Balance", eq. (2.4)
 
             # desired leg position and velocity
             pos_leg_des_air = 0.5

@@ -31,7 +31,7 @@ class Controller:
         self.ik = InverseKinematics(model_file)
 
         # gains (NOTE: these does not take gear reduction into account)
-        self.kp = np.array([250.0, 250.0, 250.0, 250.0])
+        self.kp = np.array([150.0, 150.0, 150.0, 150.0])
         self.kd = np.array([5.0, 5.0, 5.0, 5.0])
 
         # get foot locations
@@ -61,7 +61,7 @@ class Controller:
         self.t_phase = 0.0
         self.num_steps = 0
         self.first_step = True
-        self.T_SSP = 0.45
+        self.T_SSP = 0.4
         self.T_DSP = 0.0
         self.T = self.T_SSP + self.T_DSP
 
@@ -98,8 +98,14 @@ class Controller:
         self.Kd_db = self.T_DSP + (1/self.lam) * self.coth(self.lam * self.T_SSP)  # deadbeat gains
 
         # Raibert foot placement gains
-        self.Kp_foot = 1.8
-        self.Kd_foot = 0.05
+        self.Kp_raibert = 1.5
+        self.Kd_raibert = 0.3
+
+        # max step increment
+        self.u_max = 0.3
+
+        # feedforward bias input for stepping
+        self.u_bias = -0.04
 
         # which foot stepping controller to use
         self.foot_placement_ctrl = "LIP"   # "Raibert" or "LIP"
@@ -273,17 +279,25 @@ class Controller:
             # LIP foot placement (deadbeat control)
             u_ff = self.vx_cmd * self.T_SSP
             u_fb = self.Kp_db * (p_com_pre - p_com_LIP_pre) + self.Kd_db * (v_com_pre - v_com_LIP_pre)
-            u = u_ff + u_fb
+            u = u_ff + u_fb + self.u_bias
 
-        # use Raibert controller
+        # use Raibert style controller (added the Kp term for better regulation)
         elif self.foot_placement_ctrl == "Raibert":
 
             # Raibert foot placement controller
-            u = (  self.Kp_foot * p_com 
-                 + self.Kd_foot * (v_com - self.vx_cmd) 
-                 + 0.5 * self.vx_cmd * self.T_SSP)
+            u_ff = 0.5 * v_com * self.T_SSP
+            u_fb = self.Kd_raibert * (v_com - self.vx_cmd) + self.Kp_raibert * (p_com - 0.0)
+            u = u_ff + u_fb + self.u_bias
         
         print(f"vx_cmd: {self.vx_cmd:.2f} m/s, vx_com: {v_com:.2f} m/s")
+
+        # saturate the step increment (in base frame)
+        px_base_W = self.q_base[0]
+        u_W = stance_pos_W[0] + u
+        u_base = u_W - px_base_W
+        u_base = np.clip(u_base, -self.u_max, self.u_max)
+        u_W = u_base + px_base_W
+        u = u_W - stance_pos_W[0]
 
         # compute the foot placement (apex, 5th order use 8/3, 7th order use 16/5)
         swing_init_W = swing_init_pos_W
