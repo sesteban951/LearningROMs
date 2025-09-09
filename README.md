@@ -1,3 +1,10 @@
+# Enviornment
+
+Recommend creating a ```conda``` enviornment. See:
+```bash
+https://www.anaconda.com/docs/getting-started/miniconda/install#macos-linux-installation
+```
+
 # Dependencies
 
 ## JAX
@@ -43,3 +50,15 @@ and use it to view logs, for example:
 tensorboard --logdir=./rl/log --port=6006
 ```
 and opening ```http://localhost:6006/``` in your internet browser.
+
+## PyGame
+Used for joysticking in some simulations.
+
+Install via:
+```bash
+conda install -c conda-forge pygame
+```
+OR
+```bash
+pip install pygame
+```
