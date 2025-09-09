@@ -63,7 +63,7 @@ class Controller:
         # ROM variables
         self.p_com_W = np.zeros(3)
         self.v_com_W = np.zeros(3)
-        self.T_SSP = 0.4
+        self.T_SSP = 0.3
 
         # foot variables
         self.z_apex = 0.10         # maximum foot height achieved during swing
@@ -71,8 +71,8 @@ class Controller:
         self.z_foot_offset = 0.05  # offset of the foot from the ground for foot geom
 
         # foot placement gains
-        self.kp_foot = 1.0
-        self.kd_foot = 0.2
+        self.kp_foot = 1.8
+        self.kd_foot = 0.0
 
     # update interrnal state and time
     def update_state(self, data):
@@ -99,23 +99,23 @@ class Controller:
         self.v_right_joints = self.v_joints[[self.idx.JOINT.RH, self.idx.JOINT.RK]].copy()
 
     # compute the center of mass positions and velocity
-    def update_com_state(self):
+    def update_com_state(self, data):
 
         # total mass
         total_mass = np.sum(self.model.body_mass)
 
         # position of center of mass in world frame
         com_pos_W = np.zeros(3)
-        for i in range(model.nbody):
-            body_mass = model.body_mass[i]
+        for i in range(self.model.nbody):
+            body_mass = self.model.body_mass[i]
             body_pos = data.xipos[i]      # body position in world frame
             com_pos_W += body_mass * body_pos
         com_pos_W /= total_mass
 
         # velocity of center of mass in world frame
         com_vel_W = np.zeros(3)
-        for i in range(model.nbody):
-            body_mass = model.body_mass[i]
+        for i in range(self.model.nbody):
+            body_mass = self.model.body_mass[i]
             body_vel = data.cvel[i, 3:]   # linear velocity from cvel (6D: ang[0:3], lin[3:6])
             com_vel_W += body_mass * body_vel
         com_vel_W /= total_mass
@@ -189,7 +189,7 @@ class Controller:
                                      self.z_foot_offset])
 
         # compute the COM state in STANCE foot frame (world aligned)
-        p_com = self.p_com_W - swing_init_pos_W
+        p_com = self.p_com_W - stance_pos_W
         v_com = self.v_com_W
 
         # extract the x, z components
@@ -201,9 +201,18 @@ class Controller:
 
         # compute the foot placement
         swing_init_W = swing_init_pos_W
-        swing_target_W = swing_init_pos_W + np.array([u, 0.0])
+        swing_target_W = stance_pos_W + np.array([u, 0.0])
         swing_middle_W = np.array([(swing_init_W[0] + swing_target_W[0]) / 2.0, 
                                    (8.0/3.0) * (self.z_apex + self.z_foot_offset)])
+        
+        # compute the swing foot trajectory using a Bezier curve
+        ctrl_pts_swing = np.array([swing_init_W,
+                                   swing_init_W,
+                                   swing_middle_W,
+                                   swing_target_W,
+                                   swing_target_W])
+        t_eval = np.array([self.t_phase / self.T_SSP])
+        p_swing_des, v_swing_des = bezier_curve(t_eval, ctrl_pts_swing)
     
         # left foot is swing
         if self.swing_foot == "left":
@@ -213,16 +222,8 @@ class Controller:
             v_right_des = np.array([0.0, 0.0])
             
             # left foot is swing
-            ctrl_pts_swing = np.array([swing_init_W,
-                                       swing_init_W,
-                                       swing_middle_W,
-                                       swing_target_W,
-                                       swing_target_W])
-            t_eval = np.array([self.t_phase / self.T_SSP])
-            p_left_des, v_left_des = bezier_curve(t_eval, ctrl_pts_swing)
-
-            p_left_des = p_left_des[0].flatten()
-            v_left_des = v_left_des[0].flatten()
+            p_left_des = p_swing_des[0].flatten()
+            v_left_des = v_swing_des[0].flatten()
 
         # right foot is swing
         elif self.swing_foot == "right":
@@ -230,18 +231,10 @@ class Controller:
             # left foot is stationary
             p_left_des = stance_pos_W
             v_left_des = np.array([0.0, 0.0])
-
+            
             # right foot is swing
-            ctrl_pts_swing = np.array([swing_init_W,
-                                       swing_init_W,
-                                       swing_middle_W,
-                                       swing_target_W,
-                                       swing_target_W])
-            t_eval = np.array([self.t_phase / self.T_SSP])
-            p_right_des, v_right_des = bezier_curve(t_eval, ctrl_pts_swing)
-
-            p_right_des = p_right_des[0].flatten()
-            v_right_des = v_right_des[0].flatten()
+            p_right_des = p_swing_des[0].flatten()
+            v_right_des = v_swing_des[0].flatten()
 
         return p_left_des, p_right_des, v_left_des, v_right_des
 
@@ -252,7 +245,7 @@ class Controller:
         self.update_state(data)
 
         # update COM state
-        self.update_com_state()
+        self.update_com_state(data)
 
         # update the timing variables
         self.update_timing()
