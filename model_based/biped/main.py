@@ -8,7 +8,7 @@ import glfw
 
 # custom includes 
 from indeces import Biped_IDX
-from model_based.biped.utils import InverseKinematics, bezier_curve
+from model_based.biped.utils import InverseKinematics, bezier_curve, Joy
 
 ##################################################################################
 
@@ -22,6 +22,9 @@ class Controller:
 
         # create indexing object
         self.idx = Biped_IDX()
+
+        # create joystick object
+        self.joystick = Joy()
 
         # create IK object
         self.ik = InverseKinematics(model_file)
@@ -77,6 +80,13 @@ class Controller:
         # foot placement gains
         self.kp_foot = 1.8
         self.kd_foot = 0.05
+
+        # command scaling
+        self.vx_cmd_scale = 1.0   # m/s per unit joystick command
+        self.vx_cmd = 0.0         # desired forward velocity (used with joystick if connected)
+        self.vx_cmd_alpha = 0.01  # low-pass filter, (very low b/c fast control loop)
+        self.vx_cmd_prev = 0.0    
+        self.vx_cmd_curr = 0.0    
 
     # update interrnal state and time
     def update_state(self, data):
@@ -179,13 +189,24 @@ class Controller:
             self.stance_foot_pos_W = _stance_pos_W.reshape(2,)
             self.swing_init_pos_W = _swing_init_pos_W.reshape(2,)
 
-    # compute foot position in world frame
-    def compute_foot_positions(self):
+    # update velocity command from joystick
+    def update_joystick_command(self):
 
-        # compute the foot positions in world frame
-        self.foot_pos_W = np.zeros((2, 2))
-        self.foot_pos_W[0] = self.stance_foot_pos_W
-        self.foot_pos_W[1] = self.swing_init_pos_W
+        # if joystick is connected
+        if self.joystick.isConnected:
+
+            # update the joystick inputs
+            self.joystick.update()
+
+            # get input
+            vx_cmd_raw = -self.joystick.LS_Y
+            self.vx_cmd_curr = self.vx_cmd_scale * vx_cmd_raw
+            self.vx_cmd = self.vx_cmd_alpha * self.vx_cmd_curr + (1.0 - self.vx_cmd_alpha) * self.vx_cmd_prev
+            self.vx_cmd_prev = self.vx_cmd
+
+            # deadband
+            if abs(self.vx_cmd) < 0.05:
+                self.vx_cmd = 0.0
 
     # compute the foot targets
     def compute_foot_targets(self):
@@ -204,8 +225,14 @@ class Controller:
         px_com = p_com_ST[0]
         vx_com = v_com_ST[0]
 
+
+        print(f"vx_cmd: {self.vx_cmd:.2f} m/s, vx_com: {vx_com:.2f} m/s")
+
+
         # foot placement controller
-        u = self.kp_foot * px_com + self.kd_foot * vx_com
+        u = (  self.kp_foot * px_com 
+             + self.kd_foot * (vx_com - self.vx_cmd) 
+             + 0.5 * self.vx_cmd * self.T_SSP)
 
         # compute the foot placement
         swing_init_W = swing_init_pos_W
@@ -258,6 +285,9 @@ class Controller:
         # update the timing variables
         self.update_timing(data)
 
+        # update the joystick command
+        self.update_joystick_command()
+
         # compute desired foot positions and velocities
         p_left_des_W, p_right_des_W, v_left_des_W, v_right_des_W = self.compute_foot_targets()
         p_left_des_W = p_left_des_W.reshape(2,1)
@@ -267,13 +297,13 @@ class Controller:
 
         # compute desired base position and velocity
         p_base_des_W = np.array([self.q_base[0], self.z_base + self.z_foot_offset]).reshape(2,1)
-        o_base_des_W = -0.1
+        o_base_des_W = -0.2
         v_base_des_W = np.array([self.v_base[0], 0.0]).reshape(2,1)
         w_base_des_W = 0.0
 
         # do IK
         q_des, _ = self.ik.ik_world(p_base_des_W, o_base_des_W, p_left_des_W, p_right_des_W,
-                                        v_base_des_W, w_base_des_W, v_left_des_W, v_right_des_W)
+                                    v_base_des_W, w_base_des_W, v_left_des_W, v_right_des_W)
 
         # extract the desired joint positions and velocities
         q_joints_des = q_des[3:7].flatten()

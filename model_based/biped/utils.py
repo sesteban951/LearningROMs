@@ -228,7 +228,7 @@ def bezier_curve(t_pts, ctrl_pts):
 
 ##################################################################################
 
-class Joystick:
+class Joy:
 
     def __init__(self):
 
@@ -237,24 +237,25 @@ class Joystick:
         pygame.joystick.init()
 
         # check if a joystick is connected
+        self.isConnected = False
         if pygame.joystick.get_count() == 0:
             
-            # default to no joystick
-            self.joystick = None
-
             # print warning
             print("No joystick connected.")
 
         # found a joystick
         else:
+
+            # set flag
+            self.isConnected = True
             
             # get the first joystick
             self.joystick = pygame.joystick.Joystick(0)
             self.joystick.init()
 
             # print info
-            print("Joystick connected: {}".format(self.joystick.get_name()))
-        
+            print("Joystick connected: [{}]".format(self.joystick.get_name()))
+
         # joystick parameters
         self.deadzone = 0.05
 
@@ -279,7 +280,7 @@ class Joystick:
         self.D_Y = False
 
     # update the joystick inputs
-    def update_inputs(self):
+    def update(self):
 
         # no joystick connected
         if self.joystick is None:
@@ -328,10 +329,10 @@ class Joystick:
 
 if __name__ == "__main__":
 
-    joystick = Joystick()
+    joystick = Joy()
 
     while True:
 
-        joystick.update_inputs()
+        joystick.update()
 
         pygame.time.wait(10)
