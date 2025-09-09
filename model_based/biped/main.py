@@ -50,8 +50,6 @@ class Controller:
 
         # internal state and time
         self.time = 0.0
-        self.q = np.zeros(7)
-        self.v = np.zeros(7)
         self.q_base = np.zeros(3)
         self.v_base = np.zeros(3)
         self.q_joints = np.zeros(4)
@@ -79,6 +77,7 @@ class Controller:
         self.z_apex = 0.04           # maximum foot height achieved during swing
         self.z_base = 0.75           # nominal height of the base from the ground
         self.z_foot_offset = 0.045   # offset of the foot from the ground for foot geom
+        self.bez_order = 4           # order of the Bezier curve for swing foot trajectory (4 or 6)  
 
         # compute LIP parameters
         self.lam = np.sqrt(9.81 / self.z_base)  # natural frequency
@@ -108,8 +107,8 @@ class Controller:
         self.u_bias = -0.04
 
         # which foot stepping controller to use
-        self.foot_placement_ctrl = "LIP"   # "Raibert" or "LIP"
-        # self.foot_placement_ctrl = "Raibert"   # "Raibert" or "LIP"
+        # self.foot_placement_ctrl = "LIP"   # "Raibert" or "LIP"
+        self.foot_placement_ctrl = "Raibert"   # "Raibert" or "LIP"
 
         # velocity command parameters
         self.vx_cmd_scale = 0.5    # m/s per unit joystick command
@@ -124,23 +123,13 @@ class Controller:
         # update time
         self.time = data.time
 
-        # update joint positions and velocities
-        self.q = data.qpos.copy()
-        self.v = data.qvel.copy()
-
         # update base state
-        self.q_base = self.q[self.idx.POS.POS_X : self.idx.POS.POS_X + 3].copy()
-        self.v_base = self.v[self.idx.VEL.VEL_X : self.idx.VEL.VEL_X + 3].copy()
+        self.q_base = data.qpos[self.idx.POS.POS_X : self.idx.POS.POS_X + 3].copy()
+        self.v_base = data.qvel[self.idx.VEL.VEL_X : self.idx.VEL.VEL_X + 3].copy()
 
         # update the joint state
-        self.q_joints = self.q[self.idx.POS.POS_LH : self.idx.POS.POS_LH + 4].copy()
-        self.v_joints = self.v[self.idx.VEL.VEL_LH : self.idx.VEL.VEL_LH + 4].copy()
-
-        # left and right legs
-        self.q_left_joints = self.q_joints[[self.idx.JOINT.LH, self.idx.JOINT.LK]].copy()
-        self.v_left_joints = self.v_joints[[self.idx.JOINT.LH, self.idx.JOINT.LK]].copy()
-        self.q_right_joints = self.q_joints[[self.idx.JOINT.RH, self.idx.JOINT.RK]].copy()
-        self.v_right_joints = self.v_joints[[self.idx.JOINT.RH, self.idx.JOINT.RK]].copy()
+        self.q_joints = data.qpos[self.idx.POS.POS_LH : self.idx.POS.POS_LH + 4].copy()
+        self.v_joints = data.qvel[self.idx.VEL.VEL_LH : self.idx.VEL.VEL_LH + 4].copy()
 
     # compute the center of mass positions and velocity
     def update_com_state(self, data):
@@ -243,7 +232,7 @@ class Controller:
 
         # no joystick
         else:
-            # will just use the defualt in the init
+            # will just use the default that was set in the init
             pass
 
     # compute the foot targets
@@ -288,9 +277,11 @@ class Controller:
             u_ff = 0.5 * v_com * self.T_SSP
             u_fb = self.Kd_raibert * (v_com - self.vx_cmd) + self.Kp_raibert * (p_com - 0.0)
             u = u_ff + u_fb + self.u_bias
-        
-        print(f"vx_cmd: {self.vx_cmd:.2f} m/s, vx_com: {v_com:.2f} m/s")
 
+        # invalid foot placement controller
+        else:
+            raise ValueError("Invalid foot placement controller selected")
+        
         # saturate the step increment (in base frame)
         px_base_W = self.q_base[0]
         u_W = stance_pos_W[0] + u
@@ -299,20 +290,45 @@ class Controller:
         u_W = u_base + px_base_W
         u = u_W - stance_pos_W[0]
 
-        # compute the foot placement (apex, 5th order use 8/3, 7th order use 16/5)
+        # compute the swing foot landing target
         swing_init_W = swing_init_pos_W
         swing_target_W = stance_pos_W + np.array([u, 0.0])
-        swing_middle_W = np.array([(swing_init_W[0] + swing_target_W[0]) / 2.0, 
-                                   (16.0/5.0) * (self.z_apex + self.z_foot_offset)])
+
+        # 4th order Bezier curve
+        if self.bez_order == 4:
+
+            # compute the middle control point (highest point in swing)
+            swing_middle_W = np.array([(swing_init_W[0] + swing_target_W[0]) / 2.0, 
+                                       (8.0/3.0) * (self.z_apex + self.z_foot_offset)])
+            
+            # compute the swing foot trajectory using a Bezier curve
+            ctrl_pts_swing = np.array([swing_init_W,
+                                       swing_init_W,
+                                       swing_middle_W,
+                                       swing_target_W,
+                                       swing_target_W])
         
-        # compute the swing foot trajectory using a Bezier curve
-        ctrl_pts_swing = np.array([swing_init_W,
-                                   swing_init_W,
-                                   swing_init_W,
-                                   swing_middle_W,
-                                   swing_target_W,
-                                   swing_target_W,
-                                   swing_target_W])
+        # 6th order Bezier curve
+        elif self.bez_order == 6:
+
+            # compute the middle control point (highest point in swing)
+            swing_middle_W = np.array([(swing_init_W[0] + swing_target_W[0]) / 2.0, 
+                                       (16.0/5.0) * (self.z_apex + self.z_foot_offset)])
+            
+            # compute the swing foot trajectory using a Bezier curve
+            ctrl_pts_swing = np.array([swing_init_W,
+                                       swing_init_W,
+                                       swing_init_W,
+                                       swing_middle_W,
+                                       swing_target_W,
+                                       swing_target_W,
+                                       swing_target_W])
+            
+        # invalid Bezier order
+        else:
+            raise ValueError("Invalid Bezier curve order, must be 4 or 6")
+
+        # evaluate the Bezier curve at the current phase
         t_eval = np.array([self.t_phase / self.T_SSP])
         p_swing_des, v_swing_des = bezier_curve(t_eval, ctrl_pts_swing)
     
@@ -337,6 +353,9 @@ class Controller:
             # right foot is swing
             p_right_des = p_swing_des[0].flatten()
             v_right_des = v_swing_des[0].flatten()
+
+        # print tracking info
+        print(f"v_cmd: {self.vx_cmd:.3f}, v_com: {v_com:.3f}")
 
         return p_left_des, p_right_des, v_left_des, v_right_des
 
@@ -370,7 +389,7 @@ class Controller:
 
         # do IK
         q_des, _ = self.ik.ik_world(p_base_des_W, o_base_des_W, p_left_des_W, p_right_des_W,
-                                        v_base_des_W, w_base_des_W, v_left_des_W, v_right_des_W)
+                                    v_base_des_W, w_base_des_W, v_left_des_W, v_right_des_W)
 
         # extract the desired joint positions and velocities
         q_joints_des = q_des[3:7].flatten()
@@ -464,16 +483,6 @@ if __name__ == "__main__":
 
         # compute the inputs
         tau = control.compute_input(data)
-
-        data.ctrl[:] = tau
-
-        # hold the base in the air
-        # data.qpos[idx.POS.POS_X] = 0.0
-        # data.qpos[idx.POS.POS_Z] = 1.0
-        # data.qpos[idx.POS.EUL_Y] = 0.0
-        # data.qvel[idx.VEL.VEL_X] = 0.0
-        # data.qvel[idx.VEL.VEL_Z] = 0.0
-        # data.qvel[idx.VEL.ANG_Y] = 0.0
 
         # set the torques
         data.ctrl[:] = tau
