@@ -54,15 +54,25 @@ class Controller:
         self.num_steps = 0
         self.first_step = True
 
+        # frame variables
+        self.stance_foot = None
+        self.stance_foot_pos_W = None
+        self.swing_foot = None
+        self.swing_init_pos_W = None
+
         # ROM variables
         self.p_com_W = np.zeros(3)
         self.v_com_W = np.zeros(3)
-        self.T_SSP = 0.5
+        self.T_SSP = 0.4
 
-        # frame variables
-        self.stance_foot = None
-        self.swing_foot = None
-        self.swing_init_pos_W = None
+        # foot variables
+        self.z_apex = 0.10         # maximum foot height achieved during swing
+        self.z_base = 0.8          # nominal height of the base from the ground
+        self.z_foot_offset = 0.05  # offset of the foot from the ground for foot geom
+
+        # foot placement gains
+        self.kp_foot = 1.0
+        self.kd_foot = 0.2
 
     # update interrnal state and time
     def update_state(self, data):
@@ -117,7 +127,7 @@ class Controller:
     # update the timing variables
     def update_timing(self):
 
-        # copmute the current phase value
+        # compute the current phase value
         self.t_phase = self.time % self.T_SSP
     
         # compute the number of steps taken
@@ -142,72 +152,96 @@ class Controller:
 
             # update labels
             self.swing_foot = "left"
-            self.stance_foot = "right"
+
+            # update the stance foot position in world frame
+            _stance_pos_W, _ = self.ik.fk_feet_in_world(self.q_base.reshape(3,1), self.v_base.reshape(3,1),
+                                                        self.q_right_joints.reshape(2,1), self.v_right_joints.reshape(2,1))
+            self.stance_foot_pos_W = _stance_pos_W.reshape(2,)
 
             # update the initial swing foot position in world frame
-            self.swing_init_pos_W, _ = self.ik.fk_feet_in_world(self.q_base.reshape(3,1), self.v_base.reshape(3,1),
-                                                                self.q_left_joints.reshape(2,1), self.v_left_joints.reshape(2,1))
-
+            _swing_init_pos_W, _ = self.ik.fk_feet_in_world(self.q_base.reshape(3,1), self.v_base.reshape(3,1),
+                                                            self.q_left_joints.reshape(2,1), self.v_left_joints.reshape(2,1))
+            self.swing_init_pos_W = _swing_init_pos_W.reshape(2,)
+        
+        # right is swing, left is stance
         else:
 
             # update labels
             self.swing_foot = "right"
-            self.stance_foot = "left"
+
+            # update the stance foot position in world frame
+            _stance_pos_W, _ = self.ik.fk_feet_in_world(self.q_base.reshape(3,1), self.v_base.reshape(3,1),
+                                                        self.q_left_joints.reshape(2,1), self.v_left_joints.reshape(2,1))
+            self.stance_foot_pos_W = _stance_pos_W.reshape(2,)
 
             # update the initial swing foot position in world frame
-            self.swing_init_pos_W, _ = self.ik.fk_feet_in_world(self.q_base.reshape(3,1), self.v_base.reshape(3,1),
-                                                                self.q_right_joints.reshape(2,1), self.v_right_joints.reshape(2,1))
+            _swing_init_pos_W, _ = self.ik.fk_feet_in_world(self.q_base.reshape(3,1), self.v_base.reshape(3,1),
+                                                            self.q_right_joints.reshape(2,1), self.v_right_joints.reshape(2,1))
+            self.swing_init_pos_W = _swing_init_pos_W.reshape(2,)
 
     # compute the foot targets
     def compute_foot_targets(self):
-        
+
+        # parse the swing foot initial position and stance foot position
+        stance_pos_W = np.array([self.stance_foot_pos_W[0], 
+                                 self.z_foot_offset])
+        swing_init_pos_W = np.array([self.swing_init_pos_W[0], 
+                                     self.z_foot_offset])
+
+        # compute the COM state in STANCE foot frame (world aligned)
+        p_com = self.p_com_W - swing_init_pos_W
+        v_com = self.v_com_W
+
+        # extract the x, z components
+        px_com = p_com[0]
+        vx_com = v_com[0]
+
+        # foot placement controller
+        u = self.kp_foot * px_com + self.kd_foot * vx_com
+
+        # compute the foot placement
+        swing_init_W = swing_init_pos_W
+        swing_target_W = swing_init_pos_W + np.array([u, 0.0])
+        swing_middle_W = np.array([(swing_init_W[0] + swing_target_W[0]) / 2.0, 
+                                   (8.0/3.0) * (self.z_apex + self.z_foot_offset)])
+    
         # left foot is swing
         if self.swing_foot == "left":
             
             # right foot is stationary
-            p_right_des = np.array([[0.2], [-0.75]])
-            v_right_des = np.array([[0.0], [0.0]])
-
-            px_0 = -0.2
-            pz_0 = -0.75
-            px_1 = -0.2
-            pz_1 = -0.45
-            px_2 = -0.2
-            pz_2 = -0.75
-            ctrl_pts_swing = np.array([[px_0, pz_0],
-                                       [px_0, pz_0],
-                                       [px_1, pz_1],
-                                       [px_2, pz_2],
-                                       [px_2, pz_2]])
+            p_right_des = stance_pos_W
+            v_right_des = np.array([0.0, 0.0])
+            
+            # left foot is swing
+            ctrl_pts_swing = np.array([swing_init_W,
+                                       swing_init_W,
+                                       swing_middle_W,
+                                       swing_target_W,
+                                       swing_target_W])
             t_eval = np.array([self.t_phase / self.T_SSP])
             p_left_des, v_left_des = bezier_curve(t_eval, ctrl_pts_swing)
 
-            p_left_des = p_left_des[0].reshape(2,1)
-            v_left_des = v_left_des[0].reshape(2,1)
+            p_left_des = p_left_des[0].flatten()
+            v_left_des = v_left_des[0].flatten()
 
         # right foot is swing
         elif self.swing_foot == "right":
             
             # left foot is stationary
-            p_left_des = np.array([[-0.2], [-0.75]])
-            v_left_des = np.array([[0.0], [0.0]])
+            p_left_des = stance_pos_W
+            v_left_des = np.array([0.0, 0.0])
 
-            px_0 = 0.2
-            pz_0 = -0.75
-            px_1 = 0.2
-            pz_1 = -0.45
-            px_2 = 0.2
-            pz_2 = -0.75
-            ctrl_pts_swing = np.array([[px_0, pz_0],
-                                       [px_0, pz_0],
-                                       [px_1, pz_1],
-                                       [px_2, pz_2],
-                                       [px_2, pz_2]])
+            # right foot is swing
+            ctrl_pts_swing = np.array([swing_init_W,
+                                       swing_init_W,
+                                       swing_middle_W,
+                                       swing_target_W,
+                                       swing_target_W])
             t_eval = np.array([self.t_phase / self.T_SSP])
             p_right_des, v_right_des = bezier_curve(t_eval, ctrl_pts_swing)
 
-            p_right_des = p_right_des[0].reshape(2,1)
-            v_right_des = v_right_des[0].reshape(2,1)
+            p_right_des = p_right_des[0].flatten()
+            v_right_des = v_right_des[0].flatten()
 
         return p_left_des, p_right_des, v_left_des, v_right_des
 
@@ -224,20 +258,25 @@ class Controller:
         self.update_timing()
 
         # compute desired foot positions and velocities
-        p_left_des, p_right_des, v_left_des, v_right_des = self.compute_foot_targets()
+        p_left_des_W, p_right_des_W, v_left_des_W, v_right_des_W = self.compute_foot_targets()
+        p_left_des_W = p_left_des_W.reshape(2,1)
+        p_right_des_W = p_right_des_W.reshape(2,1)
+        v_left_des_W = v_left_des_W.reshape(2,1)
+        v_right_des_W = v_right_des_W.reshape(2,1)
+
+        # compute desired base position and velocity
+        p_base_des_W = np.array([self.q_base[0], self.z_base]).reshape(2,1)
+        o_base_des_W = -0.2
+        v_base_des_W = np.array([self.v_base[0], 0.0]).reshape(2,1)
+        w_base_des_W = 0.0
 
         # do IK
-        q_left_des, v_left_des = self.ik.ik_feet_in_base(p_left_des, v_left_des)
-        q_right_des, v_right_des = self.ik.ik_feet_in_base(p_right_des, v_right_des)
+        q_des, v_des = self.ik.ik_world(p_base_des_W, o_base_des_W, p_left_des_W, p_right_des_W,
+                                        v_base_des_W, w_base_des_W, v_left_des_W, v_right_des_W)
 
-        # build the full desired joint vectors
-        q_joints_des = np.zeros(4)
-        q_joints_des[0:2] = q_left_des.flatten()
-        q_joints_des[2:4] = q_right_des.flatten()
-        
-        v_joints_des = np.zeros(4)
-        # v_joints_des[0:2] = v_left_des.flatten()
-        # v_joints_des[2:4] = v_right_des.flatten()
+        # extract the desired joint positions and velocities
+        q_joints_des = q_des[3:7].flatten()
+        v_joints_des = v_des[3:7].flatten() * 0.0
 
         # compute the control
         tau = (  self.kp * (q_joints_des - self.q_joints) 
@@ -331,12 +370,12 @@ if __name__ == "__main__":
         data.ctrl[:] = tau
 
         # hold the base in the air
-        data.qpos[idx.POS.POS_X] = 0.0
-        data.qpos[idx.POS.POS_Z] = 1.0
-        data.qpos[idx.POS.EUL_Y] = 0.0
-        data.qvel[idx.VEL.VEL_X] = 0.0
-        data.qvel[idx.VEL.VEL_Z] = 0.0
-        data.qvel[idx.VEL.ANG_Y] = 0.0
+        # data.qpos[idx.POS.POS_X] = 0.0
+        # data.qpos[idx.POS.POS_Z] = 1.0
+        # data.qpos[idx.POS.EUL_Y] = 0.0
+        # data.qvel[idx.VEL.VEL_X] = 0.0
+        # data.qvel[idx.VEL.VEL_Z] = 0.0
+        # data.qvel[idx.VEL.ANG_Y] = 0.0
 
         # set the torques
         data.ctrl[:] = tau
