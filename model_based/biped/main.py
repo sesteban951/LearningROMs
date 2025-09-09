@@ -27,8 +27,12 @@ class Controller:
         self.ik = InverseKinematics(model_file)
 
         # gains (NOTE: these does not take gear reduction into account)
-        self.kp = np.array([250.0, 250.0, 250.0, 250.0])
+        self.kp = np.array([300.0, 300.0, 300.0, 300.0])
         self.kd = np.array([15.0, 15.0, 15.0, 15.0])
+
+        # get foot locations
+        self.left_foot_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_SITE, "left_foot_site")
+        self.right_foot_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_SITE, "right_foot_site")
 
         # get the gear ratios
         LH_actuator_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_ACTUATOR, "hip_left_motor")
@@ -66,13 +70,13 @@ class Controller:
         self.T_SSP = 0.3
 
         # foot variables
-        self.z_apex = 0.10         # maximum foot height achieved during swing
-        self.z_base = 0.8          # nominal height of the base from the ground
+        self.z_apex = 0.075         # maximum foot height achieved during swing
+        self.z_base = 0.75         # nominal height of the base from the ground
         self.z_foot_offset = 0.05  # offset of the foot from the ground for foot geom
 
         # foot placement gains
         self.kp_foot = 1.8
-        self.kd_foot = 0.0
+        self.kd_foot = 0.05
 
     # update interrnal state and time
     def update_state(self, data):
@@ -125,7 +129,7 @@ class Controller:
         self.v_com_W = np.array([com_vel_W[0], com_vel_W[2]])  # only x, z components
 
     # update the timing variables
-    def update_timing(self):
+    def update_timing(self, data):
 
         # compute the current phase value
         self.t_phase = self.time % self.T_SSP
@@ -139,13 +143,13 @@ class Controller:
         if (new_step == True) or (self.first_step == True):
 
             # update the swing/stance foot info
-            self.update_frames()
+            self.update_frames(data)
 
             # set the first step flag to false
             self.first_step = False
 
     # update the swing and stance foot frames
-    def update_frames(self):
+    def update_frames(self, data):
 
         # left is swing, right is stance
         if (self.num_steps % 2) == 0:
@@ -153,14 +157,12 @@ class Controller:
             # update labels
             self.swing_foot = "left"
 
-            # update the stance foot position in world frame
-            _stance_pos_W, _ = self.ik.fk_feet_in_world(self.q_base.reshape(3,1), self.v_base.reshape(3,1),
-                                                        self.q_right_joints.reshape(2,1), self.v_right_joints.reshape(2,1))
-            self.stance_foot_pos_W = _stance_pos_W.reshape(2,)
+            # update the stance and intial swing foot position in world frame
+            _stance_pos_W = data.site_xpos[self.right_foot_id, [0, 2]]
+            _swing_init_pos_W = data.site_xpos[self.left_foot_id, [0, 2]]
 
-            # update the initial swing foot position in world frame
-            _swing_init_pos_W, _ = self.ik.fk_feet_in_world(self.q_base.reshape(3,1), self.v_base.reshape(3,1),
-                                                            self.q_left_joints.reshape(2,1), self.v_left_joints.reshape(2,1))
+            # reshape and store
+            self.stance_foot_pos_W = _stance_pos_W.reshape(2,)
             self.swing_init_pos_W = _swing_init_pos_W.reshape(2,)
         
         # right is swing, left is stance
@@ -169,15 +171,21 @@ class Controller:
             # update labels
             self.swing_foot = "right"
 
-            # update the stance foot position in world frame
-            _stance_pos_W, _ = self.ik.fk_feet_in_world(self.q_base.reshape(3,1), self.v_base.reshape(3,1),
-                                                        self.q_left_joints.reshape(2,1), self.v_left_joints.reshape(2,1))
-            self.stance_foot_pos_W = _stance_pos_W.reshape(2,)
+            # update the stance and intial swing foot position in world frame
+            _stance_pos_W = data.site_xpos[self.left_foot_id, [0, 2]]
+            _swing_init_pos_W = data.site_xpos[self.right_foot_id, [0, 2]]
 
-            # update the initial swing foot position in world frame
-            _swing_init_pos_W, _ = self.ik.fk_feet_in_world(self.q_base.reshape(3,1), self.v_base.reshape(3,1),
-                                                            self.q_right_joints.reshape(2,1), self.v_right_joints.reshape(2,1))
+            # reshape and store
+            self.stance_foot_pos_W = _stance_pos_W.reshape(2,)
             self.swing_init_pos_W = _swing_init_pos_W.reshape(2,)
+
+    # compute foot position in world frame
+    def compute_foot_positions(self):
+
+        # compute the foot positions in world frame
+        self.foot_pos_W = np.zeros((2, 2))
+        self.foot_pos_W[0] = self.stance_foot_pos_W
+        self.foot_pos_W[1] = self.swing_init_pos_W
 
     # compute the foot targets
     def compute_foot_targets(self):
@@ -189,12 +197,12 @@ class Controller:
                                      self.z_foot_offset])
 
         # compute the COM state in STANCE foot frame (world aligned)
-        p_com = self.p_com_W - stance_pos_W
-        v_com = self.v_com_W
+        p_com_ST = self.p_com_W - stance_pos_W
+        v_com_ST = self.v_com_W
 
         # extract the x, z components
-        px_com = p_com[0]
-        vx_com = v_com[0]
+        px_com = p_com_ST[0]
+        vx_com = v_com_ST[0]
 
         # foot placement controller
         u = self.kp_foot * px_com + self.kd_foot * vx_com
@@ -248,7 +256,7 @@ class Controller:
         self.update_com_state(data)
 
         # update the timing variables
-        self.update_timing()
+        self.update_timing(data)
 
         # compute desired foot positions and velocities
         p_left_des_W, p_right_des_W, v_left_des_W, v_right_des_W = self.compute_foot_targets()
@@ -258,18 +266,18 @@ class Controller:
         v_right_des_W = v_right_des_W.reshape(2,1)
 
         # compute desired base position and velocity
-        p_base_des_W = np.array([self.q_base[0], self.z_base]).reshape(2,1)
-        o_base_des_W = -0.2
+        p_base_des_W = np.array([self.q_base[0], self.z_base + self.z_foot_offset]).reshape(2,1)
+        o_base_des_W = -0.1
         v_base_des_W = np.array([self.v_base[0], 0.0]).reshape(2,1)
         w_base_des_W = 0.0
 
         # do IK
-        q_des, v_des = self.ik.ik_world(p_base_des_W, o_base_des_W, p_left_des_W, p_right_des_W,
+        q_des, _ = self.ik.ik_world(p_base_des_W, o_base_des_W, p_left_des_W, p_right_des_W,
                                         v_base_des_W, w_base_des_W, v_left_des_W, v_right_des_W)
 
         # extract the desired joint positions and velocities
         q_joints_des = q_des[3:7].flatten()
-        v_joints_des = v_des[3:7].flatten() * 0.0
+        v_joints_des = np.zeros_like(q_joints_des)
 
         # compute the control
         tau = (  self.kp * (q_joints_des - self.q_joints) 
@@ -302,7 +310,7 @@ if __name__ == "__main__":
     # setup the glfw window
     if not glfw.init():
         raise Exception("Could not initialize GLFW")
-    window = glfw.create_window(1080, 720, "Robot", None, None)
+    window = glfw.create_window(1920, 1080, "Robot", None, None)
     glfw.make_context_current(window)
 
     # set the window to be resizable
@@ -336,7 +344,7 @@ if __name__ == "__main__":
 
     # simulation setup
     hz_render = 50.0
-    t_max = 15.0
+    t_max = 60.0
 
     # compute the decimation
     sim_dt = model.opt.timestep
