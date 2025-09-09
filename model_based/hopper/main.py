@@ -80,7 +80,9 @@ class Controller:
         # Ground
         if foot_in_contact:
 
-            # TODO: implement state machine. Let the robot compress, then when beginning to extend, switch to thursting
+            # TODO: implement state machine. 
+            #       1) Let the robot compress, then when beginning to extend, switch to thrusting
+            #       2) control theta to exit the ground phase at desired angle
 
             # feedforward forces
             F_mass_ff = -self.gravity * (self.upper_body_mass)
@@ -122,7 +124,7 @@ class Controller:
             theta_des = np.clip(theta_des, -0.7, 0.7)
 
             # compute the theta torque
-            T_body = self.kp_body * (theta_des - theta_body)
+            T_body = self.kp_body * (theta_des - theta_body) + self.kd_body * (0.0 - thetadot_body)
 
         # apply gear ratio
         T_body /= self.gear_body
