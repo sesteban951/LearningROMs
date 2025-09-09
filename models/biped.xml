@@ -70,10 +70,10 @@
 
     <!-- Actuators -->
 	<actuator>
-		<motor name="hip_left_motor" joint="left_hip_joint" ctrllimited="true" ctrlrange="-1 1" gear="250"/>
-    	<motor name="knee_left_motor" joint="left_knee_joint" ctrllimited="true" ctrlrange="-1 1" gear="250"/>
-		<motor name="hip_right_motor" joint="right_hip_joint" ctrllimited="true" ctrlrange="-1 1" gear="250"/>
-		<motor name="knee_right_motor" joint="right_knee_joint" ctrllimited="true" ctrlrange="-1 1" gear="250"/>
+		<motor name="hip_left_motor" joint="left_hip_joint" ctrllimited="true" ctrlrange="-1 1" gear="100"/>
+    	<motor name="knee_left_motor" joint="left_knee_joint" ctrllimited="true" ctrlrange="-1 1" gear="100"/>
+		<motor name="hip_right_motor" joint="right_hip_joint" ctrllimited="true" ctrlrange="-1 1" gear="100"/>
+		<motor name="knee_right_motor" joint="right_knee_joint" ctrllimited="true" ctrlrange="-1 1" gear="100"/>
 	</actuator>
 
     <!-- default configuration (when you press "Load key" button) -->

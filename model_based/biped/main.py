@@ -101,7 +101,7 @@ class Controller:
         self.Kp_foot = 1.8
         self.Kd_foot = 0.05
 
-        # which controller to use
+        # which foot stepping controller to use
         self.foot_placement_ctrl = "LIP"   # "Raibert" or "LIP"
         # self.foot_placement_ctrl = "Raibert"   # "Raibert" or "LIP"
 
@@ -235,6 +235,11 @@ class Controller:
             if abs(self.vx_cmd) < 0.05:
                 self.vx_cmd = 0.0
 
+        # no joystick
+        else:
+            # will just use the defualt in the init
+            pass
+
     # compute the foot targets
     def compute_foot_targets(self):
 
@@ -280,7 +285,7 @@ class Controller:
         
         print(f"vx_cmd: {self.vx_cmd:.2f} m/s, vx_com: {v_com:.2f} m/s")
 
-        # compute the foot placement (5th order use 8/3, 7th order use 16/5)
+        # compute the foot placement (apex, 5th order use 8/3, 7th order use 16/5)
         swing_init_W = swing_init_pos_W
         swing_target_W = stance_pos_W + np.array([u, 0.0])
         swing_middle_W = np.array([(swing_init_W[0] + swing_target_W[0]) / 2.0, 

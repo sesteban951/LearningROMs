@@ -47,7 +47,7 @@
 
     <!-- Actuators -->
     <actuator>
-        <motor joint="paddle_slide" ctrllimited="true" ctrlrange="-1 1" gear="250"/>
+        <motor name="paddle_motor" joint="paddle_slide" ctrllimited="true" ctrlrange="-1 1" gear="250"/>
     </actuator>
 
     <!-- contacts -->
