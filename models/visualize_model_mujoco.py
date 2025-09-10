@@ -34,8 +34,13 @@ print("\nNumber of joints:", model.njnt)
 for i in range(model.njnt):
     name = mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_JOINT, i)
     jtype = model.jnt_type[i]
+    lower, upper = model.jnt_range[i]
     print(f"    Joint {i} name:", name)
     print(f"    Joint {i} type:", joint_type_dict[jtype])
+    if jtype in (2, 3):  # slide or hinge
+        print(f"    Limits: [{lower:.4f}, {upper:.4f}]")
+    else:
+        print("    Limits: N/A")
 
 # actuators
 print("\nNumber of actuators:", model.nu)

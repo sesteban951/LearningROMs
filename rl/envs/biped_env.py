@@ -1,4 +1,5 @@
 # jax imports
+from xml.parsers.expat import model
 import jax
 import jax.numpy as jnp
 from brax.envs.base import PipelineEnv, State
@@ -19,30 +20,32 @@ class BipedConfig:
     model_path: str = "./models/biped.xml"
 
     # number of "simulation steps" for every control input
-    physics_steps_per_control_step: int = 2
+    physics_steps_per_control_step: int = 8
 
     # Reward function coefficients
-    reward_base_height: float = 2.0
-    reward_base_orient: float = 2.0
-    reward_joint_pos: float = 2.0
-    reward_base_vel: float = 0.1
-    reward_joint_vel: float = 0.1
-    reward_control: float = 1e-4
+    reward_base_height: float = 2.0  # base height target
+    reward_base_orient: float = 0.5  # base orientation target
+    reward_base_vx: float = 1.0      # forward velocity
+    reward_base_vz: float = 0.1      # vertical velocity
+    reward_base_omega: float = 0.1   # angular velocity
+    reward_joint_pos: float = 2.0    # joint position target
+    reward_joint_vel: float = 0.1    # joint velocity target
+    reward_control: float = 1e-4     # control cost
 
     # Ranges for sampling initial conditions
+    lb_base_theta_pos: float = -jnp.pi / 2.0  # base theta pos limits
+    ub_base_theta_pos: float =  jnp.pi / 2.0
+    lb_base_cart_vel: float = -2.0     # base cart vel limits
+    ub_base_cart_vel: float =  2.0
+    lb_base_theta_vel: float = -3.0    # base theta vel limits
+    ub_base_theta_vel: float =  3.0
+    
     lb_hip_joint_pos: float = -jnp.pi  # hip joint pos limits
     ub_hip_joint_pos: float =  jnp.pi
     lb_knee_joint_pos: float = -2.4    # knee joint pos limits
     ub_knee_joint_pos: float =  0.0
-    lb_base_theta_pos: float = -jnp.pi / 2.0  # base theta pos limits
-    ub_base_theta_pos: float =  jnp.pi / 2.0
-
     lb_joint_vel: float = -3.0         # joint vel limits
     ub_joint_vel: float =  3.0
-    lb_base_cart_vel: float = -2.5     # base cart vel limits
-    ub_base_cart_vel: float =  2.5
-    lb_base_theta_vel: float = -3.0    # base theta vel limits
-    ub_base_theta_vel: float =  3.0
 
 
 # environment class
@@ -71,8 +74,9 @@ class BipedEnv(PipelineEnv):
         sys = mjcf.load_model(mj_model)
 
         # get default keyframe
-        self.qpos_default = jnp.array(mj_model.key_qpos[0])
-        self.qpos_stand = jnp.array(mj_model.key_qpos[1])
+        key_name = "standing"
+        key_id = mujoco.mj_name2id(mj_model, mujoco.mjtObj.mjOBJ_KEY, key_name)
+        self.qpos_stand = jnp.array(mj_model.key_qpos[key_id])
 
         # insantiate the parent class
         super().__init__(
@@ -102,31 +106,35 @@ class BipedEnv(PipelineEnv):
         # split the rng to sample unique initial conditions
         rng, rng1, rng2 = jax.random.split(rng, 3)
 
-        # sample the generalized position
-        q_base_theta_lb = jnp.array([self.config.lb_base_theta_pos])
-        q_base_theta_ub = jnp.array([self.config.ub_base_theta_pos])
-        q_joint_lb = jnp.array([self.config.lb_hip_joint_pos, self.config.lb_knee_joint_pos,
-                                self.config.lb_hip_joint_pos, self.config.lb_knee_joint_pos])
-        q_joint_ub = jnp.array([self.config.ub_hip_joint_pos, self.config.ub_knee_joint_pos,
-                                self.config.ub_hip_joint_pos, self.config.ub_knee_joint_pos])
-        qpos_no_base_cart_lb = jnp.concatenate([q_base_theta_lb, q_joint_lb])
-        qpos_no_base_cart_ub = jnp.concatenate([q_base_theta_ub, q_joint_ub])
-        
-        # sample the generalized velocity
-        v_base_lb = jnp.array([self.config.lb_base_cart_vel, self.config.lb_base_cart_vel, self.config.lb_base_theta_vel])
-        v_base_ub = jnp.array([self.config.ub_base_cart_vel, self.config.ub_base_cart_vel, self.config.ub_base_theta_vel])
-        v_joint_lb = jnp.array([self.config.lb_joint_vel, self.config.lb_joint_vel,
-                                self.config.lb_joint_vel, self.config.lb_joint_vel])
-        v_joint_ub = jnp.array([self.config.ub_joint_vel, self.config.ub_joint_vel,
-                                self.config.ub_joint_vel, self.config.ub_joint_vel])
-        qvel_lb = jnp.concatenate([v_base_lb, v_joint_lb])
-        qvel_ub = jnp.concatenate([v_base_ub, v_joint_ub])
+        # sample generalized position
+        q_pos_lb = jnp.array([-0.01, -0.01, 
+                              self.config.lb_base_theta_pos,
+                              self.config.lb_hip_joint_pos,
+                              self.config.lb_knee_joint_pos,
+                              self.config.lb_hip_joint_pos,
+                              self.config.lb_knee_joint_pos])
+        q_pos_ub = jnp.array([0.01, 0.01,
+                              self.config.ub_base_theta_pos,
+                              self.config.ub_hip_joint_pos,
+                              self.config.ub_knee_joint_pos,
+                              self.config.ub_hip_joint_pos,
+                              self.config.ub_knee_joint_pos])
+        qpos = jax.random.uniform(rng1, (7,), minval=q_pos_lb, maxval=q_pos_ub)
 
-        # sample the initial state
-        qpos_base_cart = self.qpos_default[0:2]  # base x position fixed at default
-        qpos_no_base_cart = jax.random.uniform(rng1, (5,), minval=qpos_no_base_cart_lb, maxval=qpos_no_base_cart_ub)
-        qvel = jax.random.uniform(rng2, (7,), minval=qvel_lb, maxval=qvel_ub)
-        qpos = jnp.concatenate([qpos_base_cart, qpos_no_base_cart])
+        # sample the generalized velocity
+        q_vel_lb = jnp.array([self.config.lb_base_cart_vel, self.config.lb_base_cart_vel, 
+                              self.config.lb_base_theta_vel,
+                              self.config.lb_joint_vel,
+                              self.config.lb_joint_vel,
+                              self.config.lb_joint_vel,
+                              self.config.lb_joint_vel])
+        q_vel_ub = jnp.array([self.config.ub_base_cart_vel, self.config.ub_base_cart_vel, 
+                              self.config.ub_base_theta_vel,
+                              self.config.ub_joint_vel,
+                              self.config.ub_joint_vel,
+                              self.config.ub_joint_vel,
+                              self.config.ub_joint_vel])
+        qvel = jax.random.uniform(rng2, (7,), minval=q_vel_lb, maxval=q_vel_ub)
 
         # reset the physics state
         data = self.pipeline_init(qpos, qvel)
@@ -138,12 +146,15 @@ class BipedEnv(PipelineEnv):
         reward, done = jnp.zeros(2)
 
         # reset the metrics
-        metrics = {"reward_base_height": jnp.array(0.0),
-                   "reward_base_orient": jnp.array(0.0),
-                   "reward_joint_pos": jnp.array(0.0),
-                   "reward_base_vel": jnp.array(0.0),
-                   "reward_joint_vel": jnp.array(0.0),
-                   "reward_control": jnp.array(0.0)}
+        metrics = {"reward_base_height": 0.0,
+                   "reward_base_orient": 0.0,
+                   "reward_base_vx": 0.0,
+                   "reward_base_vz": 0.0,
+                   "reward_base_omega": 0.0,
+                   "reward_joint_pos": 0.0,
+                   "reward_joint_vel": 0.0,
+                   "reward_control": 0.0
+                   }
 
         # state info
         info = {"rng": rng,
@@ -178,19 +189,33 @@ class BipedEnv(PipelineEnv):
         base_height = data.qpos[1]
         base_theta = data.qpos[2]
         joint_pos = data.qpos[3:]
-        base_vel = data.qvel[0:3]
+        base_vx = data.qvel[0]
+        base_vz = data.qvel[1]
+        base_omega = data.qvel[2]
         joint_vel = data.qvel[3:]
         tau = data.ctrl
 
-        base_cos_theta = jnp.cos(base_theta)
-        base_sin_theta = jnp.sin(base_theta)
-        base_theta_vec = jnp.array([base_cos_theta - 1.0, base_sin_theta]) # want (0, 0)
+        # desired values
+        base_height_des = 0.75
+        base_theta_des = -0.1
+        cos_theta_des = jnp.cos(base_theta_des)
+        sin_theta_des = jnp.sin(base_theta_des)
+        base_vx_des = 1.0
+        joint_pos_des = self.qpos_stand[3:]
+
+        # special angle error
+        cos_theta = jnp.cos(base_theta)
+        sin_theta = jnp.sin(base_theta)
+        base_theta_err_vec = jnp.array([cos_theta - cos_theta_des, 
+                                        sin_theta - sin_theta_des]) # want (0, 0)
 
         # compute error terms
-        height_err = jnp.square(base_height - self.qpos_stand[1]).sum()
-        orient_err = jnp.square(base_theta_vec).sum()
-        joint_pos_err = jnp.square(joint_pos - self.qpos_stand[3:]).sum()
-        base_vel_err = jnp.square(base_vel).sum()
+        height_err = jnp.square(base_height - base_height_des).sum()
+        orient_err = jnp.square(base_theta_err_vec).sum()
+        joint_pos_err = jnp.square(joint_pos - joint_pos_des).sum()
+        base_vx_err = jnp.square(base_vx - base_vx_des).sum()
+        base_vz_err = jnp.square(base_vz).sum()
+        base_omega_err = jnp.square(base_omega).sum()
         joint_vel_err = jnp.square(joint_vel).sum()
         control_err = jnp.square(tau).sum()
 
@@ -198,19 +223,23 @@ class BipedEnv(PipelineEnv):
         reward_base_height = -self.config.reward_base_height * height_err
         reward_base_orient = -self.config.reward_base_orient * orient_err
         reward_joint_pos = -self.config.reward_joint_pos * joint_pos_err
-        reward_base_vel = -self.config.reward_base_vel * base_vel_err
+        reward_base_vx = -self.config.reward_base_vx * base_vx_err
+        reward_base_vz = -self.config.reward_base_vz * base_vz_err
+        reward_base_omega = -self.config.reward_base_omega * base_omega_err
         reward_joint_vel = -self.config.reward_joint_vel * joint_vel_err
         reward_control  = -self.config.reward_control * control_err
-
+    
         # compute the total reward
         reward = (reward_base_height + reward_base_orient + reward_joint_pos +
-                  reward_base_vel + reward_joint_vel + reward_control)
+                  reward_base_vx + reward_base_vz + reward_base_omega + reward_joint_vel + reward_control)
 
         # update the metrics and info dictionaries
         state.metrics["reward_base_height"] = reward_base_height
         state.metrics["reward_base_orient"] = reward_base_orient
+        state.metrics["reward_base_vx"] = reward_base_vx
+        state.metrics["reward_base_vz"] = reward_base_vz
+        state.metrics["reward_base_omega"] = reward_base_omega
         state.metrics["reward_joint_pos"] = reward_joint_pos
-        state.metrics["reward_base_vel"] = reward_base_vel
         state.metrics["reward_joint_vel"] = reward_joint_vel
         state.metrics["reward_control"] = reward_control
         state.info["step"] += 1
@@ -242,9 +271,9 @@ class BipedEnv(PipelineEnv):
         qvel = data.qvel
 
         # compute the observation
-        obs = jnp.concatenate([base_pos,
-                               joint_pos,
-                               qvel])
+        obs = jnp.concatenate([base_pos,  # height, cos(theta), sin(theta)
+                               joint_pos, # joint positions
+                               qvel])     # full velocity state
 
         return obs
     
