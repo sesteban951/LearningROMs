@@ -22,6 +22,10 @@ class DoubleIntegrator:
         self.nx = 2
         self.nu = 1
 
+        # state sampling range for training data
+        self.x_min = jnp.array([-3.0, -3.0])
+        self.x_max = jnp.array([ 3.0,  3.0])
+
     # dynamics function, continuous time
     @staticmethod
     def f(t, x, u):
@@ -87,6 +91,10 @@ class Pendulum:
         # state and input dimensions
         self.nx = 2
         self.nu = 1
+
+        # state sampling range for training data
+        self.x_min = jnp.array([-jnp.pi, -3.0])
+        self.x_max = jnp.array([ jnp.pi,  3.0])
 
     # dynamics function, continuous time
     @staticmethod
@@ -160,6 +168,10 @@ class VanDerPol:
         self.nx = 2
         self.nu = 0
 
+        # state sampling range for training data
+        self.x_min = jnp.array([-3.0, -3.0])
+        self.x_max = jnp.array([ 3.0,  3.0])
+
     # dynamics function, continuous time
     def f(self, t, x, u):
         """
@@ -210,6 +222,10 @@ class LorenzAttractor:
         # state and input dimensions
         self.nx = 3
         self.nu = 0
+
+        # state sampling range for training data
+        self.x_min = jnp.array([-20.0, -20.0, 0.0])
+        self.x_max = jnp.array([ 20.0,  20.0, 50.0])
 
     # dynamics function, continuous time
     def f(self, t, x, u):
@@ -266,6 +282,10 @@ class CartPole:
         # state and input dimensions
         self.nx = 4
         self.nu = 1
+
+        # state sampling range for training data
+        self.x_min = jnp.array([-1.0, -jnp.pi, -3.0, -3.0])
+        self.x_max = jnp.array([ 1.0,  jnp.pi,  3.0,  3.0])
 
     # dynamics function, continuous time
     @staticmethod
