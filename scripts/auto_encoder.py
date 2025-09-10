@@ -59,7 +59,7 @@ class AutoEncoder(nn.Module):
     def encode(self, x_t):
         """
         Encoder network to map FOM state to latent space:
-            xₜ = E(zₜ)
+            zₜ = E(xₜ)
         """
         x = x_t
         x = nn.relu(self.enc_fc1(x))
@@ -83,7 +83,7 @@ class AutoEncoder(nn.Module):
     def latent_dynamics(self, z_t):
         """
         Simple feedforward network to model latent dynamics:
-            zₜ₊₁ = f_θdyn(zₜ)
+            zₜ₊₁ = f_θ(zₜ)
         """
         z = z_t
         z = nn.relu(self.dyn_fc1(z))
@@ -97,9 +97,9 @@ class AutoEncoder(nn.Module):
         Forward pass through the autoencoder and dynamics model 
         
         Args:
-            x_t:  FOM Input state at time t, shape (batch_size, data_dim)
+            x_t:  FOM Input state at time t, shape (batch_size, nx)
         Returns:
-            x_t_hat: Reconstructed FOM state at time t, shape (batch_size, data_dim)
+            x_t_hat: Reconstructed FOM state at time t, shape (batch_size, nx)
             z_t:     Latent representation at time t, shape (batch_size, z_dim)
             z_t1:    Predicted latent representation at time t+1, shape (batch_size, z_dim)
         """
@@ -121,8 +121,8 @@ def loss_fn(params, model, x_t, x_t1, opt_config):
     Args:
         params:      Model parameters
         model:       AutoEncoder model instance
-        x_t:         FOM Input state at time t, shape (mini_batch_size, data_dim)
-        x_t1:        FOM Input state at time t+1, shape (mini_batch_size, data_dim)
+        x_t:         FOM Input state at time t,   shape (mini_batch_size, nx)
+        x_t1:        FOM Input state at time t+1, shape (mini_batch_size, nx)
         opt_config:  OptimizerConfig instance with options
     Returns:
         total_loss:  Combined loss value
@@ -136,13 +136,13 @@ def loss_fn(params, model, x_t, x_t1, opt_config):
     # (call model again and take only the latent from the first block)
     z_t1_true = model.apply(params, x_t1, method=model.encode)
 
-    # Reconstruction loss, λᵣ ‖x̂ₜ − xₜ‖²
+    # Reconstruction loss, λ_rec * (1/B) * Σ  ‖x̂ₜ − xₜ‖²
     loss_rec = opt_config.lambda_rec * jnp.mean((x_t_hat - x_t)**2)
 
-    # Latent dynamics loss, λ_d‖ẑₜ₊₁ − zₜ₊₁‖²
+    # Latent dynamics loss, λ_dyn * (1/B) * Σ ‖ẑₜ₊₁ − zₜ₊₁‖²
     loss_dyn = opt_config.lambda_dyn * jnp.mean((z_t1_hat - z_t1_true)**2)
 
-    # L2 regularization on model parameters (no reg on the biases), λₗ * ‖θ‖²
+    # L2 regularization on model parameters (no reg on the biases), λ_reg * Σ ‖θ‖²
     l2 = sum(jnp.sum(jnp.square(p)) for p in jax.tree_util.tree_leaves(params) if p.ndim > 1)
     loss_reg = opt_config.lambda_reg * l2
 
@@ -204,7 +204,7 @@ class Trainer:
         self.rng = rng
 
         # initialize model parameters
-        dummy_input = jnp.ones((1, input_size))  # shape (batch_size=1, data_dim)
+        dummy_input = jnp.ones((1, input_size))  # shape (batch_size=1, nx)
         params = self.model.init(rng_init, dummy_input)
 
         # setup the optimizer
@@ -226,8 +226,8 @@ class Trainer:
 
         Args:
             state:  Current TrainState (model + optimizer)
-            x_t:    FOM Input state at time t, shape (mini_batch_size, data_dim)
-            x_t1:   FOM Input state at time t+1, shape (mini_batch_size, data_dim)
+            x_t:    FOM Input state at time t,   shape (mini_batch_size, nx)
+            x_t1:   FOM Input state at time t+1, shape (mini_batch_size, nx)
             step:   Current training step (for logging)
         Returns:
             new_state: Updated TrainState after applying gradients

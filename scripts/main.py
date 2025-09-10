@@ -5,9 +5,10 @@
 ##
 
 # standard imports 
-import numpy as np               # standard numpy
-import matplotlib.pyplot as plt  # standard matplotlib
-import time                      # standard time
+import numpy as np                       # standard numpy
+import matplotlib.pyplot as plt          # standard matplotlib
+from mpl_toolkits.mplot3d import Axes3D  # 3D plotting
+import time                              # standard time
 
 # jax imports
 import jax
@@ -39,13 +40,12 @@ def generate_batch_data(key, ode_solver, batch_size, dt, N):
     x3 = random.uniform(key3, minval=0.0, maxval=50.0, shape=(batch_size,))
     x0_batch = jnp.stack([x1, x2, x3], axis=1)  # shape (batch_size, nx)
 
-    # solve ODE for all initial conditions in parallel
+    # solve ODE for all initial conditions in parallel, shape (batch_size, N+1, nx)
     x_traj_batch = ode_solver.forward_propagate_cl_batch(x0_batch, dt, N)
-    # x_traj_batch = ode_solver.forward_propagate_nc_batch(x0_batch, dt, N)
 
-    # parse for training
-    x_t =  x_traj_batch[:, :-1, :]  # shape (batch_size, N, nx)
-    x_t1 = x_traj_batch[:, 1:, :]   # shape (batch_size, N, nx)
+    # parse for training. x_t removed last point and, x_t1 removed first point
+    x_t =  x_traj_batch[:, :-1, :]  # x_{t},   shape (batch_size, N, nx)
+    x_t1 = x_traj_batch[:, 1:, :]   # x_{t+1}, shape (batch_size, N, nx)
 
     return x_t, x_t1, key
 
@@ -82,12 +82,15 @@ def rollout_ae(ae, params, x0, N):
 
 # ---------- Compare + basic metrics ----------
 def compare_rollouts(ode_solver, ae, params, x0, dt, N):
-    x_true = rollout_true(ode_solver, x0, dt, N)  # (N+1, x_dim)
-    x_hat  = rollout_ae(ae, params, x0, N)       # (N+1, x_dim)
+
+    # rollout true dynamics and AE dynamics
+    x_true = rollout_true(ode_solver, x0, dt, N)  # (N+1, nx)
+    x_hat  = rollout_ae(ae, params, x0, N)        # (N+1, nx)
+
+    # compute MSE
     mse_dim = jnp.mean((x_hat - x_true) ** 2, axis=0)
     mse_tot = jnp.mean((x_hat - x_true) ** 2)
     return np.array(x_true), np.array(x_hat), np.array(mse_dim), float(mse_tot)
-
 
 
 #############################################################################
@@ -129,7 +132,7 @@ if __name__ == "__main__":
     # training parameters
     num_steps = 1_500    # number of training steps
     traj_batch_size = 64  # number of trajectories per batch
-    mini_batch_size = 32  # number of trajectories per mini-batch
+    mini_batch_size = 64  # number of trajectories per mini-batch
     print_every = 50      # print every n steps
 
     # random key
@@ -179,25 +182,24 @@ if __name__ == "__main__":
     # main training loop
     for step in range(num_steps):
 
-        # Generate a fresh batch of trajectories (B_traj, N, nx)
+        # Generate a fresh batch of trajectories. Each trajectory has shape (batch_size, N, nx)
         x_t, x_t1, rng_data = generate_batch_data(rng_data, ode_solver, traj_batch_size, dt, N)
 
-        # Flatten to (num_pairs, nx)
+        # Flatten to (num_pairs, nx). Basically, stacks (N, nx) matrices
         # Each trajectory contributes N pairs
         X = x_t.reshape(-1, fom.nx)      # (traj_batch_size * N, nx)
         Y = x_t1.reshape(-1, fom.nx)     # (traj_batch_size * N, nx)
 
-        # Sample a mini-batch of pairs
-        num_pairs = X.shape[0]
+        # Sample a mini-batch of pairs. Take a subset of the batch size to train
+        num_pairs = X.shape[0]                  # = (traj_batch_size * N)
+        mb = min(mini_batch_size, num_pairs)    # = min{mini_batch_size, traj_batch_size * N}
 
-        # mini_batch_size here means "number of PAIRS per step"
-        mb = min(mini_batch_size, num_pairs)
-        
-        # Instead of training on the full batch, we train on a random mini-batch of pairs
-        rng_data, k_idx = random.split(rng_data)
-        perm = random.permutation(k_idx, num_pairs)
-        idx  = perm[:mb]
-        xb, yb = X[idx], Y[idx]  # still (mb, nx) but stays on device
+        # take a random mini-batch of pairs
+        rng_data, k_idx = random.split(rng_data)     # advance the RNG
+        perm = random.permutation(k_idx, num_pairs)  # random ordering of [0,...,num_pairs-1]
+        idx  = perm[:mb]                             # take the first (mini_batch_size) indices
+        xb = X[idx]                      # (mini_batch_size, nx)
+        yb = Y[idx]                      # (mini_batch_size, nx)
 
         # One training step
         trainer.state, metrics = trainer.train_step(trainer.state, xb, yb, step)
@@ -228,10 +230,11 @@ if __name__ == "__main__":
 
     plt.figure(figsize=(10,4))
     for i in range(x_true.shape[1]):
-        plt.plot(x_true[:, i], label=f"true dim {i}")
-        plt.plot(x_hat[:, i], '--', label=f"recon dim {i}")
-    # plt.plot(x_true[:, 0], x_true[:, 1], label="true x")
-    # plt.plot(x_hat[:, 0], x_hat[:, 1], '--', label="recon x")
+        # Plot true (solid) and grab its color
+        (true_line,) = plt.plot(x_true[:, i], label=f"true dim {i}")
+        color = true_line.get_color()
+        # Plot recon (dashed) using the same color
+        plt.plot(x_hat[:, i], ls='--', color=color, label=f"recon dim {i}")
     plt.xlabel("time step")
     plt.ylabel("state value")
     plt.legend()
@@ -263,8 +266,8 @@ if __name__ == "__main__":
     z_t1_true = np.array(z_t1_true)
 
     plt.figure(figsize=(6,6))
-    plt.scatter(z_t1_true[:,0], z_t1_true[:,1], label="true z_{t+1}", alpha=0.7)
-    plt.scatter(z_t1_hat[:,0], z_t1_hat[:,1], label="pred z_{t+1}", alpha=0.7)
+    plt.plot(z_t1_true[:,0], z_t1_true[:,1], label="true z_{t+1}",  marker='o', alpha=0.7)
+    plt.plot(z_t1_hat[:,0], z_t1_hat[:,1], label="pred z_{t+1}", marker='o', alpha=0.7)
     plt.xlabel("z₁")
     plt.ylabel("z₂")
     plt.legend()
@@ -288,24 +291,17 @@ if __name__ == "__main__":
     # Time-series plot
     plt.figure(figsize=(10,4))
     for i in range(x_true.shape[1]):
-        plt.plot(x_true[:, i], label=f"true x[{i}]")
-        plt.plot(x_hat[:,  i], '--', label=f"AE x̂[{i}]")
+        (true_line,) = plt.plot(x_true[:, i], label=f"true x[{i}]")  # solid
+        color = true_line.get_color()
+        plt.plot(x_hat[:,  i], ls='--', color=color, label=f"AE x̂[{i}]")  # dashed, same color
     plt.xlabel("time step"); plt.ylabel("state"); plt.title("RK4 vs AE rollout")
     plt.legend(ncol=min(4, x_true.shape[1])); plt.tight_layout(); plt.show()
 
-    # Phase/3D plot (auto-handles 2D vs 3D)
-    if x_true.shape[1] == 2:
-        plt.figure(figsize=(5,5))
-        plt.plot(x_true[:,0], x_true[:,1], label="true", alpha=0.9)
-        plt.plot(x_hat[:,0],  x_hat[:,1],  '--', label="AE", alpha=0.9)
-        plt.xlabel("x[0]"); plt.ylabel("x[1]"); plt.title("Phase portrait")
-        plt.legend(); plt.grid(True); plt.tight_layout(); plt.show()
-    elif x_true.shape[1] == 3:
-        from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
-        fig = plt.figure(figsize=(7,6))
-        ax = fig.add_subplot(111, projection='3d')
-        ax.plot(x_true[:,0], x_true[:,1], x_true[:,2], label="true", alpha=0.85)
-        ax.plot(x_hat[:,0],  x_hat[:,1],  x_hat[:,2],  '--', label="AE", alpha=0.85)
-        ax.set_xlabel("x[0]"); ax.set_ylabel("x[1]"); ax.set_zlabel("x[2]")
-        ax.set_title("3D trajectory: true vs AE"); ax.legend(); plt.tight_layout(); plt.show()
+    # 3D plot (if 3D)
+    fig = plt.figure(figsize=(7,6))
+    ax = fig.add_subplot(111, projection='3d')
+    ax.plot(x_true[:,0], x_true[:,1], x_true[:,2], label="true", alpha=0.85)
+    ax.plot(x_hat[:,0],  x_hat[:,1],  x_hat[:,2],  '--', label="AE", alpha=0.85)
+    ax.set_xlabel("x[0]"); ax.set_ylabel("x[1]"); ax.set_zlabel("x[2]")
+    ax.set_title("3D trajectory: true vs AE"); ax.legend(); plt.tight_layout(); plt.show()
 
