@@ -7,6 +7,7 @@
 # jax imports
 import jax                      
 import jax.numpy as jnp         # standard jax numpy
+import jax.random as random     # jax random number generation
 from functools import partial   # for partial function application
 
 # flax imports
@@ -17,6 +18,8 @@ from flax.training import train_state  # simple train state for optimization
 # optax imports
 import optax         # gradient processing and optimization library
 
+# custom imports
+from ode_solver import ODESolver  # ODE solver class
 
 ############################################################################
 # AUTOENCODER
@@ -30,6 +33,7 @@ class AutoEncoderConfig:
     f_hidden_dim: int  # Hidden layer size for dynamics model
     E_hidden_dim: int  # Hidden layer size for encoder
     D_hidden_dim: int  # Hidden layer size for decoder
+
 
 # AutoEncoder for ROM learning
 class AutoEncoder(nn.Module):
@@ -78,8 +82,8 @@ class AutoEncoder(nn.Module):
         z = nn.relu(self.dec_fc2(z))
         x_t_hat = self.dec_out(z)
         return x_t_hat
-
-    # Latent dynamics (z_t -> z_{t+1})
+    
+    # Latent dynamics, residual form (z_t -> z_{t+1})
     def latent_dynamics(self, z_t):
         """
         Simple feedforward network to model latent dynamics:
@@ -88,8 +92,21 @@ class AutoEncoder(nn.Module):
         z = z_t
         z = nn.relu(self.dyn_fc1(z))
         z = nn.relu(self.dyn_fc2(z))
-        z_t1_hat = self.dyn_out(z)
-        return z_t1_hat
+        z_t1 = self.dyn_out(z)  # direct mapping
+        return z_t1
+
+    # Latent dynamics (z_t -> z_{t+1})
+    def latent_dynamics_residual(self, z_t):
+        """
+        Simple feedforward network to model latent dynamics:
+            zₜ₊₁ = zₜ + r_θ(zₜ)
+        """
+        z = z_t
+        z = nn.relu(self.dyn_fc1(z))
+        z = nn.relu(self.dyn_fc2(z))
+        dz = self.dyn_out(z)
+        z_t1 = z_t + dz          # residual increment
+        return z_t1
 
     # Main forward pass (for convenience)
     def __call__(self, x_t):
@@ -105,8 +122,9 @@ class AutoEncoder(nn.Module):
         """
         z_t      = self.encode(x_t)
         x_t_hat  = self.decode(z_t)
-        z_t1_hat = self.latent_dynamics(z_t)
-        return x_t_hat, z_t, z_t1_hat
+        # z_t1 = self.latent_dynamics(z_t)
+        z_t1 = self.latent_dynamics_residual(z_t)
+        return x_t_hat, z_t, z_t1
 
 
 ############################################################################
@@ -133,8 +151,9 @@ def loss_fn(params, model, x_t, x_t1, opt_config):
     x_t_hat, z_t, z_t1_hat = model.apply(params, x_t)
 
     # Encode true next state to get the target latent z_{t+1} = E(x_{t+1})
-    # (call model again and take only the latent from the first block)
     z_t1_true = model.apply(params, x_t1, method=model.encode)
+    z_t1_true = jax.lax.stop_gradient(z_t1_true)  # stop gradient flow to encoder
+                                                  # decouples dynamics loss from encoder update
 
     # Reconstruction loss, λ_rec * (1/B) * Σ  ‖x̂ₜ − xₜ‖²
     loss_rec = opt_config.lambda_rec * jnp.mean((x_t_hat - x_t)**2)
@@ -153,8 +172,38 @@ def loss_fn(params, model, x_t, x_t1, opt_config):
 
 
 ############################################################################
+# DATA NORMALIZATION
+############################################################################
+
+# TODO: need normalization functions to condition the data and learning better
+
+############################################################################
 # TRAINER
 ############################################################################
+
+# struct to hold simulation parameters
+@struct.dataclass
+class SimulationConfig:
+
+    # simulation time parameters
+    dt: float       # total simulation time
+    N: int         # simulation time step
+
+
+# struct to hold training parameters
+@struct.dataclass
+class TrainingConfig:
+
+    # number of total steps
+    num_steps: int       # total number of training steps
+
+    # batch size
+    batch_size: int       # mini-batch size for training
+    mini_batch_size: int  # size of mini-batches for gradient computation
+
+    # updating frequency
+    print_every: int      # print metrics every n steps
+
 
 # struct to hold optimization parameters
 @struct.dataclass
@@ -188,27 +237,35 @@ class Metrics:
 # simple trainer class to handle training
 class Trainer:
 
-    def __init__(self, model, 
-                       rng,
-                       input_size, 
-                       config):
+    # initialize the trainer
+    def __init__(self, model: nn.Module, 
+                       ode_solver: ODESolver,
+                       sim_config: SimulationConfig,
+                       training_config: TrainingConfig,
+                       opt_config: OptimizerConfig,
+                       rng: jax.random.PRNGKey):
 
         # initialize model and parameters
         self.model = model
 
-        # load the config
-        self.config = config
+        # initialize the ODE solver
+        self.ode_solver = ode_solver
+
+        # load all the configs
+        self.opt_config = opt_config
+        self.sim_config = sim_config
+        self.training_config = training_config
 
         # split the RNG
-        rng, rng_init, rng_tab = jax.random.split(rng, 3)
-        self.rng = rng
+        rng_data, rng_init, rng_tab = jax.random.split(rng, 3)
+        self.rng_data = rng_data
 
         # initialize model parameters
-        dummy_input = jnp.ones((1, input_size))  # shape (batch_size=1, nx)
+        dummy_input = jnp.ones((1, self.ode_solver.dynamics.nx))  # shape (batch_size=1, nx)
         params = self.model.init(rng_init, dummy_input)
 
         # setup the optimizer
-        tx = optax.adam(self.config.learning_rate)
+        tx = optax.adam(self.opt_config.learning_rate)
 
         # create the training state (this is a snapshot of the model + optimizer)
         self.state = train_state.TrainState.create(apply_fn=self.model.apply, # model function
@@ -218,8 +275,45 @@ class Trainer:
         # print model summary
         print(self.model.tabulate(rng_tab, dummy_input))
 
+    
+    # function that generates data
+    @partial(jax.jit, static_argnums=(0,))  # static self
+    def generate_batch_data(self, rng):
+        """
+        Generate training data by simulating the FOM from random initial conditions
+
+        Args:
+            rng:         JAX random key
+        Returns:
+            x_t:   FOM state at time t,   shape (batch_size, nx)
+            x_t1:  FOM state at time t+1, shape (batch_size, nx)
+        """
+
+        # split the RNG
+        rng, subkey = jax.random.split(rng)
+
+        # generate random intial conditions
+        x_min = self.ode_solver.dynamics.x_min  # shape (nx,)
+        x_max = self.ode_solver.dynamics.x_max  # shape (nx,)
+        x0_batch = jax.random.uniform(subkey,
+                                      shape=(self.training_config.batch_size, self.ode_solver.dynamics.nx),
+                                      minval=x_min,
+                                      maxval=x_max)  # shape (batch_size, nx)
+        
+        # solve ODE for all initial conditions in parallel, shape (batch_size, N+1, nx)
+        x_traj_batch = self.ode_solver.forward_propagate_cl_batch(x0_batch,
+                                                                  self.sim_config.dt,
+                                                                  self.sim_config.N)
+        
+        # parse for training data. x_t removed last point and, x_t1 removed first point
+        x_t = x_traj_batch[:, :-1, :]  # x_{t},   shape (batch_size, N, nx)
+        x_t1 = x_traj_batch[:, 1:, :]  # x_{t+1}, shape (batch_size, N, nx)
+
+        return x_t, x_t1, rng
+
+
     # single training step function
-    @partial(jax.jit, static_argnums=0)
+    @partial(jax.jit, static_argnums=0, donate_argnums=(1,))
     def train_step(self, state, x_t, x_t1, step):
         """
         Single training step
@@ -239,7 +333,7 @@ class Trainer:
             tot_loss, (loss_rec, loss_dyn, loss_reg) = loss_fn(params,      # model parameters to optimize
                                                                self.model,  # model instance
                                                                x_t, x_t1,   # input data
-                                                               self.config) # optimizer config
+                                                               self.opt_config) # optimizer config
             return tot_loss, (loss_rec, loss_dyn, loss_reg)
 
         # make a function that computes the loss and its gradients
@@ -268,3 +362,53 @@ class Trainer:
                           update_norm=update_norm)
 
         return new_state, metrics
+    
+
+    # main training loop
+    def train(self):
+        """
+        Main training loop
+        """
+
+        # parameters that are reused
+        nx = self.ode_solver.dynamics.nx
+        mb_size = self.training_config.mini_batch_size
+        print_every = self.training_config.print_every
+
+        # loop over training steps
+        for step in range(self.training_config.num_steps):
+
+            # generate training data
+            x_t, x_t1, self.rng_data = self.generate_batch_data(self.rng_data)  # shape (batch_size, N, nx)
+
+            # Flatten to (num_pairs, nx). Basically, stacks (N, nx) matrices
+            # Each trajectory contributes N pairs
+            X = x_t.reshape(-1, nx)      # (traj_batch_size * N, nx)
+            Y = x_t1.reshape(-1, nx)     # (traj_batch_size * N, nx)
+
+            # Sample a mini-batch of pairs. Take a subset of the batch size to train
+            num_pairs = X.shape[0]                  # = (traj_batch_size * N)
+            mb = min(mb_size, num_pairs)    # = min{mini_batch_size, traj_batch_size * N}
+
+            # take a random mini-batch of pairs
+            self.rng_data, k_idx = random.split(self.rng_data)     # advance the RNG
+            idx = random.choice(k_idx, num_pairs, shape=(mb,), replace=False) # sample without replacement
+            xb = X[idx]                      # (mini_batch_size, nx)
+            yb = Y[idx]                      # (mini_batch_size, nx)
+
+            # perform a single training step
+            self.state, metrics = self.train_step(self.state, xb, yb, step)
+
+            # print Logging info
+            if step % print_every == 0:
+                print(
+                    f"Step {step:05d} | "
+                    f"L_tot = {metrics.loss:.4f}, "
+                    f"L_rec = {metrics.loss_rec:.4f}, "
+                    f"L_dyn = {metrics.loss_dyn:.4f}, "
+                    f"L_reg = {metrics.loss_reg:.4f}, "
+                    f"Grad Norm = {metrics.grad_norm:.4f}, "
+                    f"Step Norm = {metrics.update_norm:.4f}"
+                )
+
+        return self.state.params  # return the trained model parameters

@@ -358,9 +358,9 @@ if __name__ == "__main__":
 
     # --- generate random initial conditions ---
     key, subkey = random.split(key, 2)  # create subkey
-    x_min = fom.x_min
-    x_max = fom.x_max
-    x0_batch = jax.random.uniform(subkey, shape=(batch_size, fom.nx), minval=x_min, maxval=x_max)
+    x_min = solver.dynamics.x_min
+    x_max = solver.dynamics.x_max
+    x0_batch = jax.random.uniform(subkey, shape=(batch_size, solver.dynamics.nx), minval=x_min, maxval=x_max)
 
     print("x0_batch type:", type(x0_batch))
     print("x0_batch dtype:", x0_batch.dtype)
@@ -398,7 +398,7 @@ if __name__ == "__main__":
     print("x_traj_batch.shape:", x_traj_batch.shape)
 
     # Plot in 3D
-    if fom.nx == 3:
+    if solver.dynamics.nx == 3:
 
         fig = plt.figure(figsize=(8,6))
         ax = fig.add_subplot(111, projection='3d')

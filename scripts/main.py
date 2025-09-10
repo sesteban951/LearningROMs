@@ -13,7 +13,6 @@ import time                              # standard time
 # jax imports
 import jax
 import jax.numpy as jnp         # standard jax numpy
-import jax.random as random     # jax random number generation
 
 # custom imports
 from fom import *           # full order model examples
@@ -23,31 +22,6 @@ from auto_encoder import *  # autoencoder, training, configs
 #############################################################################
 # Helper functions
 #############################################################################
-
-# generate a batch of trajectory data
-def generate_batch_data(key, ode_solver, batch_size, dt, N):
-
-    # split the RNG
-    key, key1, key2, key3 = random.split(key, 4)
-
-    # generate random initial conditions
-    # x1 = random.uniform(key1, minval=-2.0, maxval=2.0, shape=(batch_size,))
-    # x2 = random.uniform(key2, minval=-2.0, maxval=2.0, shape=(batch_size,))
-    # x0_batch = jnp.stack([x1, x2], axis=1)  # shape (batch_size, nx)
-
-    x1 = random.uniform(key1, minval=-20.0, maxval=20.0, shape=(batch_size,))
-    x2 = random.uniform(key2, minval=-20.0, maxval=20.0, shape=(batch_size,))
-    x3 = random.uniform(key3, minval=0.0, maxval=50.0, shape=(batch_size,))
-    x0_batch = jnp.stack([x1, x2, x3], axis=1)  # shape (batch_size, nx)
-
-    # solve ODE for all initial conditions in parallel, shape (batch_size, N+1, nx)
-    x_traj_batch = ode_solver.forward_propagate_cl_batch(x0_batch, dt, N)
-
-    # parse for training. x_t removed last point and, x_t1 removed first point
-    x_t =  x_traj_batch[:, :-1, :]  # x_{t},   shape (batch_size, N, nx)
-    x_t1 = x_traj_batch[:, 1:, :]   # x_{t+1}, shape (batch_size, N, nx)
-
-    return x_t, x_t1, key
 
 # rollout a single trajectory using the ode solver
 def rollout_true(ode_solver, x0, dt, N):
@@ -61,17 +35,18 @@ def rollout_true(ode_solver, x0, dt, N):
 def rollout_ae(ae, params, x0, N):
 
     # z0 from x0
-    z0 = ae.apply(params, x0[None,:], method=ae.encode)  # shape (z_dim,)
+    z0 = ae.apply(params, x0[None,:], method=ae.encode)  # shape (1, z_dim)
     z0 = z0[0]  # remove batch dim, shape (z_dim,)
 
     # step function in latent space
     def step_fn(z_t, _):
 
-        z_t1 = ae.apply(params, z_t[None,:], method=ae.latent_dynamics)[0] # shape (z_dim,)
-        z_t1_hat = ae.apply(params, z_t1[None,:], method=ae.decode)[0]     # shape (x_dim,)
+        # z_t1 = ae.apply(params, z_t[None,:], method=ae.latent_dynamics)[0] # shape (z_dim,)
+        z_t1 = ae.apply(params, z_t[None,:], method=ae.latent_dynamics_residual)[0] # shape (z_dim,)
+        x_t1_hat = ae.apply(params, z_t1[None,:], method=ae.decode)[0]     # shape (x_dim,)
 
-        return z_t1, z_t1_hat # carry z_t1, output x_t1_hat
-    
+        return z_t1, x_t1_hat # carry z_t1, output x_t1_hat
+
     # initial reconstructed state
     x0_hat = ae.apply(params, z0[None,:], method=ae.decode)[0]
     z_last, x_seq = jax.lax.scan(step_fn, z0, xs=None, length=N) # x_seq shape (N, nx)
@@ -80,7 +55,7 @@ def rollout_ae(ae, params, x0, N):
 
     return x_traj_hat
 
-# ---------- Compare + basic metrics ----------
+# compare rollouts of true dynamics vs AE dynamics from same x0
 def compare_rollouts(ode_solver, ae, params, x0, dt, N):
 
     # rollout true dynamics and AE dynamics
@@ -128,19 +103,29 @@ if __name__ == "__main__":
     # trajectory parameters
     dt = 0.01     # time step
     N = 300       # number of time steps to integrate
+    sim_config = SimulationConfig(dt=dt, 
+                                  N=N)
 
     # training parameters
-    num_steps = 1_500    # number of training steps
-    traj_batch_size = 64  # number of trajectories per batch
-    mini_batch_size = 64  # number of trajectories per mini-batch
-    print_every = 50      # print every n steps
+    num_steps = 1_500      # number of training steps
+    traj_batch_size = 256  # number of trajectories per batch
+    mini_batch_size = 128  # number of trajectories per mini-batch
+    print_every = 50       # print every n steps
+    training_config = TrainingConfig(num_steps=num_steps,
+                                     batch_size=traj_batch_size,
+                                     mini_batch_size=mini_batch_size,
+                                     print_every=print_every)
 
-    # random key
-    # seed = 0
-    seed = int(time.time())  # use current time as seed
-    rng = random.PRNGKey(seed)
-    rng_train, rng_data = random.split(rng, 2)
-
+    # loss function weights
+    learning_rate = 1e-4  # learning rate
+    lambda_rec = 0.8      # reconstruction loss weight
+    lambda_dyn = 0.5      # latent dynamics loss weight
+    lambda_reg = 1e-5     # L2 regularization weight
+    opt_config = OptimizerConfig(lambda_rec=lambda_rec,
+                                 lambda_dyn=lambda_dyn,
+                                 lambda_reg=lambda_reg,
+                                 learning_rate=learning_rate)
+    
     # auto-encoder parameters
     z_dim = 2          # latent space dimension
     f_hidden_dim = 64  # hidden layer size for dynamics model
@@ -151,17 +136,12 @@ if __name__ == "__main__":
                                   f_hidden_dim=f_hidden_dim, 
                                   E_hidden_dim=E_hidden_dim, 
                                   D_hidden_dim=D_hidden_dim)
-
-    # loss function weights
-    learning_rate = 1e-4  # learning rate
-    lambda_rec = 0.8      # reconstruction loss weight
-    lambda_dyn = 0.5      # latent dynamics loss weight
-    lambda_reg = 1e-5     # L2 regularization weight
-    config = OptimizerConfig(lambda_rec=lambda_rec,
-                             lambda_dyn=lambda_dyn,
-                             lambda_reg=lambda_reg,
-                             learning_rate=learning_rate)
-
+    
+    # random key
+    # seed = 0
+    seed = int(time.time())  # use current time as seed
+    rng = random.PRNGKey(seed)
+    
     #-----------------------------------------------------------
     # Autoencoder + Trainer
     #-----------------------------------------------------------
@@ -171,69 +151,41 @@ if __name__ == "__main__":
 
     # create the trainer
     trainer = Trainer(ae,
-                      rng_train,
-                      fom.nx,
-                      config=config)
+                      ode_solver,
+                      sim_config,
+                      training_config,
+                      opt_config,
+                      rng)
 
     #-----------------------------------------------------------
     # Training loop
     #-----------------------------------------------------------
 
-    # main training loop
-    for step in range(num_steps):
+    # train the model
+    t_start = time.time()
+    params = trainer.train()  
+    t_end = time.time()
 
-        # Generate a fresh batch of trajectories. Each trajectory has shape (batch_size, N, nx)
-        x_t, x_t1, rng_data = generate_batch_data(rng_data, ode_solver, traj_batch_size, dt, N)
-
-        # Flatten to (num_pairs, nx). Basically, stacks (N, nx) matrices
-        # Each trajectory contributes N pairs
-        X = x_t.reshape(-1, fom.nx)      # (traj_batch_size * N, nx)
-        Y = x_t1.reshape(-1, fom.nx)     # (traj_batch_size * N, nx)
-
-        # Sample a mini-batch of pairs. Take a subset of the batch size to train
-        num_pairs = X.shape[0]                  # = (traj_batch_size * N)
-        mb = min(mini_batch_size, num_pairs)    # = min{mini_batch_size, traj_batch_size * N}
-
-        # take a random mini-batch of pairs
-        rng_data, k_idx = random.split(rng_data)     # advance the RNG
-        perm = random.permutation(k_idx, num_pairs)  # random ordering of [0,...,num_pairs-1]
-        idx  = perm[:mb]                             # take the first (mini_batch_size) indices
-        xb = X[idx]                      # (mini_batch_size, nx)
-        yb = Y[idx]                      # (mini_batch_size, nx)
-
-        # One training step
-        trainer.state, metrics = trainer.train_step(trainer.state, xb, yb, step)
-
-        # Log
-        if step % print_every == 0:
-            print(
-                f"step {step:05d} | "
-                f"loss={float(metrics.loss):.4f}  "
-                f"rec={float(metrics.loss_rec):.4f}  "
-                f"dyn={float(metrics.loss_dyn):.4f}  "
-                f"reg={float(metrics.loss_reg):.4f}  "
-                f"grad_norm={float(metrics.grad_norm):.4f}  "
-                f"update_norm={float(metrics.update_norm):.4f}"
-            )
+    print(f"Training time: {t_end - t_start:.2f} seconds")
 
     #-----------------------------------------------------------
     # Plotting
     #-----------------------------------------------------------
 
     # Pick one trajectory from the batch
+    key = jax.random.PRNGKey(42)
+    x_t, _, _ = trainer.generate_batch_data(key)  # shape (batch_size, N, nx)
     x_true = np.array(x_t[0])  # shape (N, nx)
 
     # Reconstruct
-    x_hat, _, _ = ae.apply(trainer.state.params, x_true)
+    x_hat, _, _ = ae.apply(params, x_true)
 
     x_hat = np.array(x_hat)  # convert to numpy for plotting
 
     plt.figure(figsize=(10,4))
     for i in range(x_true.shape[1]):
-        # Plot true (solid) and grab its color
         (true_line,) = plt.plot(x_true[:, i], label=f"true dim {i}")
         color = true_line.get_color()
-        # Plot recon (dashed) using the same color
         plt.plot(x_hat[:, i], ls='--', color=color, label=f"recon dim {i}")
     plt.xlabel("time step")
     plt.ylabel("state value")
@@ -244,7 +196,7 @@ if __name__ == "__main__":
     #-----------------------------------------------------------
 
     # Encode a trajectory
-    _, z_t, _ = ae.apply(trainer.state.params, x_true)
+    _, z_t, _ = ae.apply(params, x_true)
 
     z_t = np.array(z_t)
 
@@ -259,8 +211,8 @@ if __name__ == "__main__":
     #-----------------------------------------------------------
 
     # Encode true z_t and z_t+1
-    _, z_t, z_t1_hat = ae.apply(trainer.state.params, x_true[:-1])  # shape (N-1, z_dim)
-    _, z_t1_true, _  = ae.apply(trainer.state.params, x_true[1:])
+    _, z_t, z_t1_hat = ae.apply(params, x_true[:-1])  # shape (N-1, z_dim)
+    _, z_t1_true, _  = ae.apply(params, x_true[1:])
 
     z_t1_hat = np.array(z_t1_hat)
     z_t1_true = np.array(z_t1_true)
@@ -282,7 +234,7 @@ if __name__ == "__main__":
     x0 = jnp.array([10.0, -8.0, 25.0])  # e.g., Lorenz; adjust bounds as you prefer
 
     x_true, x_hat, mse_dim, mse_tot = compare_rollouts(
-        ode_solver, ae, trainer.state.params, x0, dt, N
+        ode_solver, ae, params, x0, dt, N
     )
 
     print("MSE per dim:", mse_dim)
@@ -296,6 +248,8 @@ if __name__ == "__main__":
         plt.plot(x_hat[:,  i], ls='--', color=color, label=f"AE x̂[{i}]")  # dashed, same color
     plt.xlabel("time step"); plt.ylabel("state"); plt.title("RK4 vs AE rollout")
     plt.legend(ncol=min(4, x_true.shape[1])); plt.tight_layout(); plt.show()
+
+    # -----------------------------------------------------------
 
     # 3D plot (if 3D)
     fig = plt.figure(figsize=(7,6))
