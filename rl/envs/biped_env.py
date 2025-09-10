@@ -23,29 +23,29 @@ class BipedConfig:
     physics_steps_per_control_step: int = 8
 
     # Reward function coefficients
-    reward_base_height: float = 2.0  # base height target
-    reward_base_orient: float = 0.5  # base orientation target
-    reward_base_vx: float = 1.0      # forward velocity
+    reward_base_height: float = 1.5  # base height target
+    reward_base_orient: float = 0.25  # base orientation target
+    reward_base_vx: float = 0.8      # forward velocity
     reward_base_vz: float = 0.1      # vertical velocity
     reward_base_omega: float = 0.1   # angular velocity
-    reward_joint_pos: float = 2.0    # joint position target
-    reward_joint_vel: float = 0.1    # joint velocity target
+    reward_joint_pos: float = 0.5    # joint position target
+    reward_joint_vel: float = 0.05    # joint velocity target
     reward_control: float = 1e-4     # control cost
 
     # Ranges for sampling initial conditions
-    lb_base_theta_pos: float = -jnp.pi / 2.0  # base theta pos limits
-    ub_base_theta_pos: float =  jnp.pi / 2.0
+    lb_base_theta_pos: float = -jnp.pi / 4.0  # base theta pos limits
+    ub_base_theta_pos: float =  jnp.pi / 4.0
     lb_base_cart_vel: float = -2.0     # base cart vel limits
     ub_base_cart_vel: float =  2.0
-    lb_base_theta_vel: float = -3.0    # base theta vel limits
-    ub_base_theta_vel: float =  3.0
+    lb_base_theta_vel: float = -2.0    # base theta vel limits
+    ub_base_theta_vel: float =  2.0
     
-    lb_hip_joint_pos: float = -jnp.pi  # hip joint pos limits
-    ub_hip_joint_pos: float =  jnp.pi
-    lb_knee_joint_pos: float = -2.4    # knee joint pos limits
+    lb_hip_joint_pos: float = -jnp.pi * 0.8  # hip joint pos limits
+    ub_hip_joint_pos: float =  jnp.pi * 0.8
+    lb_knee_joint_pos: float = -2.0    # knee joint pos limits
     ub_knee_joint_pos: float =  0.0
-    lb_joint_vel: float = -3.0         # joint vel limits
-    ub_joint_vel: float =  3.0
+    lb_joint_vel: float = -2.0         # joint vel limits
+    ub_joint_vel: float =  2.0
 
 
 # environment class
@@ -107,13 +107,13 @@ class BipedEnv(PipelineEnv):
         rng, rng1, rng2 = jax.random.split(rng, 3)
 
         # sample generalized position
-        q_pos_lb = jnp.array([-0.01, -0.01, 
+        q_pos_lb = jnp.array([-0.01, 0.84, 
                               self.config.lb_base_theta_pos,
                               self.config.lb_hip_joint_pos,
                               self.config.lb_knee_joint_pos,
                               self.config.lb_hip_joint_pos,
                               self.config.lb_knee_joint_pos])
-        q_pos_ub = jnp.array([0.01, 0.01,
+        q_pos_ub = jnp.array([0.01, 0.86,
                               self.config.ub_base_theta_pos,
                               self.config.ub_hip_joint_pos,
                               self.config.ub_knee_joint_pos,
@@ -200,7 +200,7 @@ class BipedEnv(PipelineEnv):
         base_theta_des = -0.1
         cos_theta_des = jnp.cos(base_theta_des)
         sin_theta_des = jnp.sin(base_theta_des)
-        base_vx_des = 1.0
+        base_vx_des = 0.75
         joint_pos_des = self.qpos_stand[3:]
 
         # special angle error
@@ -231,7 +231,8 @@ class BipedEnv(PipelineEnv):
     
         # compute the total reward
         reward = (reward_base_height + reward_base_orient + reward_joint_pos +
-                  reward_base_vx + reward_base_vz + reward_base_omega + reward_joint_vel + reward_control)
+                  reward_base_vx + reward_base_vz + reward_base_omega + reward_joint_vel + 
+                  reward_control)
 
         # update the metrics and info dictionaries
         state.metrics["reward_base_height"] = reward_base_height

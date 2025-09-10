@@ -68,24 +68,24 @@ if __name__ == "__main__":
     # )
 
     # # Initialize the environment and PPO hyperparameters
-    env = envs.get_environment("biped")
-    ppo_config = dict(
-        num_timesteps=100_000_000,      # total training timesteps
-        num_evals=10,                  # number of evaluations
-        reward_scaling=0.1,            # reward scale
-        episode_length=1200,            # max episode length
-        normalize_observations=True,   # normalize observations
-        unroll_length=10,              # PPO unroll length
-        num_minibatches=32,            # PPO minibatches
-        num_updates_per_batch=8,       # PPO updates per batch
-        discounting=0.97,              # gamma
-        learning_rate=5e-4,            # optimizer LR
-        clipping_epsilon=0.2,          # PPO clipping epsilon
-        entropy_cost=3e-4,             # entropy bonus
-        num_envs=2048,                 # parallel envs
-        batch_size=2048,               # batch size
-        seed=0,                        # RNG seed
-    )
+    # env = envs.get_environment("paddle_ball")
+    # ppo_config = dict(
+    #     num_timesteps=10_000_000,       # total training timesteps
+    #     num_evals=10,                  # number of evaluations
+    #     reward_scaling=0.1,            # reward scale
+    #     episode_length=300,            # max episode length
+    #     normalize_observations=True,   # normalize observations
+    #     unroll_length=10,              # PPO unroll length
+    #     num_minibatches=32,            # PPO minibatches
+    #     num_updates_per_batch=8,       # PPO updates per batch
+    #     discounting=0.97,              # gamma
+    #     learning_rate=5e-4,            # optimizer LR
+    #     clipping_epsilon=0.2,          # PPO clipping epsilon
+    #     entropy_cost=1e-3,             # entropy bonus
+    #     num_envs=2048,                 # parallel envs
+    #     batch_size=2048,               # batch size
+    #     seed=0,                        # RNG seed
+    # )
 
     # # Initialize the environment and PPO hyperparameters
     # env = envs.get_environment("hopper")
@@ -107,25 +107,25 @@ if __name__ == "__main__":
     #     seed=0,                        # RNG seed
     # )
 
-    # # Initialize the environment and PPO hyperparameters
-    # env = envs.get_environment("paddle_ball")
-    # ppo_config = dict(
-    #     num_timesteps=10_000_000,       # total training timesteps
-    #     num_evals=10,                  # number of evaluations
-    #     reward_scaling=0.1,            # reward scale
-    #     episode_length=300,            # max episode length
-    #     normalize_observations=True,   # normalize observations
-    #     unroll_length=10,              # PPO unroll length
-    #     num_minibatches=32,            # PPO minibatches
-    #     num_updates_per_batch=8,       # PPO updates per batch
-    #     discounting=0.97,              # gamma
-    #     learning_rate=5e-4,            # optimizer LR
-    #     clipping_epsilon=0.2,          # PPO clipping epsilon
-    #     entropy_cost=1e-3,             # entropy bonus
-    #     num_envs=2048,                 # parallel envs
-    #     batch_size=2048,               # batch size
-    #     seed=0,                        # RNG seed
-    # )
+    # Initialize the environment and PPO hyperparameters
+    env = envs.get_environment("biped")
+    ppo_config = dict(
+        num_timesteps=15_000_000,      # total training timesteps
+        num_evals=10,                  # number of evaluations
+        reward_scaling=0.1,            # reward scale
+        episode_length=1200,            # max episode length
+        normalize_observations=True,   # normalize observations
+        unroll_length=40,              # PPO unroll length
+        num_minibatches=32,            # PPO minibatches
+        num_updates_per_batch=32,       # PPO updates per batch
+        discounting=0.98,              # gamma
+        learning_rate=1e-4,            # optimizer LR
+        clipping_epsilon=0.2,          # PPO clipping epsilon
+        entropy_cost=1e-4,             # entropy bonus
+        num_envs=4096,                 # parallel envs
+        batch_size=4096,               # batch size
+        seed=0,                        # RNG seed
+    )
 
     #----------------------- TRAIN -----------------------#
 
