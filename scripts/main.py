@@ -32,10 +32,13 @@ def rollout_true(ode_solver, x0, dt, N):
     return x_traj
 
 # rollout a single trajectory using the auto encoder
-def rollout_ae(ae, params, x0, N):
+def rollout_ae(ae, params, normalizer, x0, N):
+
+    # normalize the intial condition
+    x0_normalized = normalizer.normalize(x0)
 
     # z0 from x0
-    z0 = ae.apply(params, x0[None,:], method=ae.encode)  # shape (1, z_dim)
+    z0 = ae.apply(params, x0_normalized[None,:], method=ae.encode)  # shape (1, z_dim)
     z0 = z0[0]  # remove batch dim, shape (z_dim,)
 
     # step function in latent space
@@ -43,12 +46,16 @@ def rollout_ae(ae, params, x0, N):
 
         # z_t1 = ae.apply(params, z_t[None,:], method=ae.latent_dynamics)[0] # shape (z_dim,)
         z_t1 = ae.apply(params, z_t[None,:], method=ae.latent_dynamics_residual)[0] # shape (z_dim,)
-        x_t1_hat = ae.apply(params, z_t1[None,:], method=ae.decode)[0]     # shape (x_dim,)
+        x_t1_hat_normalized = ae.apply(params, z_t1[None,:], method=ae.decode)[0]   # shape (x_dim,)
+        x_t1_hat = normalizer.denormalize(x_t1_hat_normalized)                
 
         return z_t1, x_t1_hat # carry z_t1, output x_t1_hat
 
     # initial reconstructed state
-    x0_hat = ae.apply(params, z0[None,:], method=ae.decode)[0]
+    x0_hat_normalized = ae.apply(params, z0[None,:], method=ae.decode)[0]
+    x0_hat = normalizer.denormalize(x0_hat_normalized)                       
+
+    # rollout in latent space
     z_last, x_seq = jax.lax.scan(step_fn, z0, xs=None, length=N) # x_seq shape (N, nx)
 
     x_traj_hat = jnp.concatenate([x0_hat[None,:], x_seq], axis=0)  # shape (N+1, nx)
@@ -56,11 +63,11 @@ def rollout_ae(ae, params, x0, N):
     return x_traj_hat
 
 # compare rollouts of true dynamics vs AE dynamics from same x0
-def compare_rollouts(ode_solver, ae, params, x0, dt, N):
+def compare_rollouts(ode_solver, ae, params, normalizer, x0, dt, N):
 
     # rollout true dynamics and AE dynamics
-    x_true = rollout_true(ode_solver, x0, dt, N)  # (N+1, nx)
-    x_hat  = rollout_ae(ae, params, x0, N)        # (N+1, nx)
+    x_true = rollout_true(ode_solver, x0, dt, N)        # (N+1, nx)
+    x_hat  = rollout_ae(ae, params, normalizer, x0, N)  # (N+1, nx)
 
     # compute MSE
     mse_dim = jnp.mean((x_hat - x_true) ** 2, axis=0)
@@ -108,8 +115,8 @@ if __name__ == "__main__":
 
     # training parameters
     num_steps = 2_000      # number of training steps
-    traj_batch_size = 256  # number of trajectories per batch
-    mini_batch_size = 128  # number of trajectories per mini-batch
+    traj_batch_size = 128  # number of trajectories per batch
+    mini_batch_size = 64  # number of trajectories per mini-batch
     print_every = 50       # print every n steps
     training_config = TrainingConfig(num_steps=num_steps,
                                      batch_size=traj_batch_size,
@@ -118,17 +125,17 @@ if __name__ == "__main__":
 
     # loss function weights
     learning_rate = 5e-4  # learning rate
-    lambda_rec = 0.8      # reconstruction loss weight
-    lambda_dyn = 0.4      # latent dynamics loss weight
-    lambda_roll = 0.001     # rollout loss weight
-    lambda_reg = 1e-3     # L2 regularization weight
+    lambda_rec = 0.5      # reconstruction loss weight
+    lambda_dyn = 0.5      # latent dynamics loss weight
+    lambda_roll = 0.1     # rollout loss weight
+    lambda_reg = 1e-4     # L2 regularization weight
     opt_config = OptimizerConfig(lambda_rec=lambda_rec,
                                  lambda_dyn=lambda_dyn,
                                  lambda_roll=lambda_roll,
                                  lambda_reg=lambda_reg,
                                  learning_rate=learning_rate)
     
-    # auto-encoder parameters
+    # autoencoder parameters
     z_dim = 2          # latent space dimension
     f_hidden_dim = 32  # hidden layer size for dynamics model
     E_hidden_dim = 32  # hidden layer size for Encoder
@@ -176,66 +183,55 @@ if __name__ == "__main__":
 
     # Pick one trajectory from the batch
     key = jax.random.PRNGKey(42)
-    x_t, _ = trainer.generate_batch_data(key)  # shape (batch_size, N+1, nx)
-    x_true = np.array(x_t[0])  # shape (N, nx)
+    x_t, _ = trainer.generate_batch_data(key)  # (batch_size, N+1, nx)
+    x_true = np.array(x_t[0])  # unnormalized true traj
 
-    # Reconstruct
-    x_hat, _, _ = ae.apply(params, x_true)
+    # Normalize before AE
+    x_true_norm = trainer.normalizer.normalize(x_true)
+    x_hat_norm, _, _ = ae.apply(params, x_true_norm)
+    x_hat = trainer.normalizer.denormalize(x_hat_norm)
 
-    x_hat = np.array(x_hat)  # convert to numpy for plotting
-
+    # plot reconstructions
     plt.figure(figsize=(10,4))
     for i in range(x_true.shape[1]):
         (true_line,) = plt.plot(x_true[:, i], label=f"true dim {i}")
         color = true_line.get_color()
         plt.plot(x_hat[:, i], ls='--', color=color, label=f"recon dim {i}")
-    plt.xlabel("time step")
-    plt.ylabel("state value")
-    plt.legend()
-    plt.title("True vs reconstructed trajectory")
-    plt.show()
+    plt.xlabel("time step"); plt.ylabel("state value"); plt.legend()
+    plt.title("True vs reconstructed trajectory"); plt.show()
 
     #-----------------------------------------------------------
 
-    # Encode a trajectory
-    _, z_t, _ = ae.apply(params, x_true)
-
+    # Encode a trajectory (latent space)
+    _, z_t, _ = ae.apply(params, x_true_norm)
     z_t = np.array(z_t)
 
     plt.figure(figsize=(6,6))
     plt.plot(z_t[:, 0], z_t[:, 1], marker='o', alpha=0.7)
-    plt.xlabel("z₁")
-    plt.ylabel("z₂")
-    plt.title("Latent trajectory")
-    plt.grid(True)
-    plt.show()
+    plt.xlabel("z₁"); plt.ylabel("z₂"); plt.title("Latent trajectory")
+    plt.grid(True); plt.show()
 
     #-----------------------------------------------------------
 
-    # Encode true z_t and z_t+1
-    _, z_t, z_t1_hat = ae.apply(params, x_true[:-1])  # shape (N-1, z_dim)
-    _, z_t1_true, _  = ae.apply(params, x_true[1:])
+    # Encode true z_t and predict z_{t+1}
+    _, z_t, z_t1_hat = ae.apply(params, x_true_norm[:-1])  
+    _, z_t1_true, _  = ae.apply(params, x_true_norm[1:])
 
     z_t1_hat = np.array(z_t1_hat)
     z_t1_true = np.array(z_t1_true)
 
     plt.figure(figsize=(6,6))
-    plt.plot(z_t1_true[:,0], z_t1_true[:,1], label="true z_{t+1}",  marker='o', alpha=0.7)
+    plt.plot(z_t1_true[:,0], z_t1_true[:,1], label="true z_{t+1}", marker='o', alpha=0.7)
     plt.plot(z_t1_hat[:,0], z_t1_hat[:,1], label="pred z_{t+1}", marker='o', alpha=0.7)
-    plt.xlabel("z₁")
-    plt.ylabel("z₂")
-    plt.legend()
-    plt.title("Latent dynamics prediction")
-    plt.grid(True)
-    plt.show()
+    plt.xlabel("z₁"); plt.ylabel("z₂"); plt.legend()
+    plt.title("Latent dynamics prediction"); plt.grid(True); plt.show()
 
     #-----------------------------------------------------------
 
-    # Sample a fresh x0 (match your system dimensionality & range)
-    x0 = jnp.array([10.0, -8.0, 25.0])  # e.g., Lorenz; adjust bounds as you prefer
-
+    # Rollout comparison
+    x0 = jnp.array([10.0, -8.0, 25.0])  # example IC
     x_true, x_hat, mse_dim, mse_tot = compare_rollouts(
-        ode_solver, ae, params, x0, dt, N
+        ode_solver, ae, params, trainer.normalizer, x0, dt, N
     )
 
     print("MSE per dim:", mse_dim)
@@ -244,19 +240,18 @@ if __name__ == "__main__":
     # Time-series plot
     plt.figure(figsize=(10,4))
     for i in range(x_true.shape[1]):
-        (true_line,) = plt.plot(x_true[:, i], label=f"true x[{i}]")  # solid
+        (true_line,) = plt.plot(x_true[:, i], label=f"true x[{i}]")
         color = true_line.get_color()
-        plt.plot(x_hat[:,  i], ls='--', color=color, label=f"AE x̂[{i}]")  # dashed, same color
+        plt.plot(x_hat[:,  i], ls='--', color=color, label=f"AE x̂[{i}]")
     plt.xlabel("time step"); plt.ylabel("state"); plt.title("RK4 vs AE rollout")
     plt.legend(ncol=min(4, x_true.shape[1])); plt.tight_layout(); plt.show()
 
-    # -----------------------------------------------------------
-
-    # 3D plot (if 3D)
-    fig = plt.figure(figsize=(7,6))
-    ax = fig.add_subplot(111, projection='3d')
-    ax.plot(x_true[:,0], x_true[:,1], x_true[:,2], label="true", alpha=0.85)
-    ax.plot(x_hat[:,0],  x_hat[:,1],  x_hat[:,2],  '--', label="AE", alpha=0.85)
-    ax.set_xlabel("x[0]"); ax.set_ylabel("x[1]"); ax.set_zlabel("x[2]")
-    ax.set_title("3D trajectory: true vs AE"); ax.legend(); plt.tight_layout(); plt.show()
-
+    # 3D trajectory plot
+    if x_true.shape[1] >= 3:
+        fig = plt.figure(figsize=(7,6))
+        ax = fig.add_subplot(111, projection='3d')
+        ax.plot(x_true[:,0], x_true[:,1], x_true[:,2], label="true", alpha=0.85)
+        ax.plot(x_hat[:,0],  x_hat[:,1],  x_hat[:,2],  '--', label="AE", alpha=0.85)
+        ax.set_xlabel("x[0]"); ax.set_ylabel("x[1]"); ax.set_zlabel("x[2]")
+        ax.set_title("3D trajectory: true vs AE"); ax.legend()
+        plt.tight_layout(); plt.show()

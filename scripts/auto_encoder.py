@@ -224,6 +224,26 @@ def loss_fn(params, model, x_traj, opt_config):
 
 
 ############################################################################
+# Data Normalizer
+############################################################################
+
+# normalize data to zero mean and unit variance
+@struct.dataclass
+class Normalizer:
+
+    mean: jnp.ndarray     # mean of the data
+    std: jnp.ndarray      # standard deviation of the data
+    epsilon: float = 1e-6 # small number to avoid division by zero
+
+    # normalize the data
+    def normalize(self, x):
+        return (x - self.mean) / (self.std + self.epsilon)
+    
+    # denormalize the data
+    def denormalize(self, x_norm):
+        return x_norm * (self.std + self.epsilon) + self.mean
+
+############################################################################
 # TRAINER
 ############################################################################
 
@@ -305,12 +325,18 @@ class Trainer:
         self.training_config = training_config
 
         # split the RNG
-        rng_data, rng_init, rng_tab = jax.random.split(rng, 3)
+        rng_data, rng_init, rng_norm, rng_tab = jax.random.split(rng, 4)
         self.rng_data = rng_data
 
         # initialize model parameters
         dummy_input = jnp.ones((1, self.ode_solver.dynamics.nx))  # shape (batch_size=1, nx)
         params = self.model.init(rng_init, dummy_input)
+
+        # setup normalizer
+        x_traj_sample, _ = self.generate_batch_data(rng_norm) # shape (batch_size, N+1, nx)
+        x_mean = jnp.mean(x_traj_sample, axis=(0,1))          # mean over batch and time, shape (nx,)
+        x_std  = jnp.std(x_traj_sample, axis=(0,1))           # std over batch and time, shape (nx,)
+        self.normalizer = Normalizer(mean=x_mean, std=x_std)
 
         # setup the optimizer
         tx = optax.adam(self.opt_config.learning_rate)
@@ -430,6 +456,9 @@ class Trainer:
                                        shape=(mb_size,),
                                        replace=False)  # shape (mini_batch_size,)
             xb = x_traj[mb_idx, :, :]                  # shape (mini_batch_size, N+1, nx)
+
+            # normalize the data before sending to the model
+            xb = self.normalizer.normalize(xb)
 
             # perform a single training step
             self.state, metrics = self.train_step(self.state, xb, step)
