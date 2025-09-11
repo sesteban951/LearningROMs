@@ -109,14 +109,14 @@ if __name__ == "__main__":
 
     # trajectory parameters
     dt = 0.01     # time step
-    N = 50       # number of time steps to integrate
+    N = 300       # number of time steps to integrate
     sim_config = SimulationConfig(dt=dt, 
                                   N=N)
 
     # training parameters
     num_steps = 2_000      # number of training steps
     traj_batch_size = 128  # number of trajectories per batch
-    mini_batch_size = 64  # number of trajectories per mini-batch
+    mini_batch_size = 128  # number of trajectories per mini-batch
     print_every = 50       # print every n steps
     training_config = TrainingConfig(num_steps=num_steps,
                                      batch_size=traj_batch_size,
@@ -127,7 +127,7 @@ if __name__ == "__main__":
     learning_rate = 5e-4  # learning rate
     lambda_rec = 0.5      # reconstruction loss weight
     lambda_dyn = 0.5      # latent dynamics loss weight
-    lambda_roll = 0.2     # rollout loss weight
+    lambda_roll = 0.0     # rollout loss weight
     lambda_reg = 1e-4     # L2 regularization weight
     opt_config = OptimizerConfig(lambda_rec=lambda_rec,
                                  lambda_dyn=lambda_dyn,
