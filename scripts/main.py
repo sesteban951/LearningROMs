@@ -102,7 +102,7 @@ if __name__ == "__main__":
 
     # trajectory parameters
     dt = 0.01     # time step
-    N = 300       # number of time steps to integrate
+    N = 200       # number of time steps to integrate
     sim_config = SimulationConfig(dt=dt, 
                                   N=N)
 
@@ -120,9 +120,11 @@ if __name__ == "__main__":
     learning_rate = 1e-4  # learning rate
     lambda_rec = 0.8      # reconstruction loss weight
     lambda_dyn = 0.5      # latent dynamics loss weight
+    lambda_roll = 0.1     # rollout loss weight
     lambda_reg = 1e-5     # L2 regularization weight
     opt_config = OptimizerConfig(lambda_rec=lambda_rec,
                                  lambda_dyn=lambda_dyn,
+                                 lambda_roll=lambda_roll,
                                  lambda_reg=lambda_reg,
                                  learning_rate=learning_rate)
     
@@ -230,7 +232,6 @@ if __name__ == "__main__":
     #-----------------------------------------------------------
 
     # Sample a fresh x0 (match your system dimensionality & range)
-    key_eval = jax.random.PRNGKey(123)
     x0 = jnp.array([10.0, -8.0, 25.0])  # e.g., Lorenz; adjust bounds as you prefer
 
     x_true, x_hat, mse_dim, mse_tot = compare_rollouts(

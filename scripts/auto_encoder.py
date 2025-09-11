@@ -28,6 +28,7 @@ from ode_solver import ODESolver  # ODE solver class
 # config for the AutoEncoder model
 @struct.dataclass
 class AutoEncoderConfig:
+
     x_dim: int         # Dimension of the FOM state
     z_dim: int         # Dimension of the ROM space
     f_hidden_dim: int  # Hidden layer size for dynamics model
@@ -131,22 +132,70 @@ class AutoEncoder(nn.Module):
 # LOSS FUNCTION
 ############################################################################
 
+# loss function with full rollout penalities
+def loss_rollout_fn(params, model, x_traj):
+    """
+    Compute the total loss for the autoencoder model using full trajectory rollouts
+    
+    Args:
+        params:     Model parameters
+        model:      AutoEncoder model instance
+        x_traj:     FOM state trajecotry,   shape (mini_batch_size, N+1, nx)
+    Returns:
+        mse:        Mean Squared Error over the full trajectory, (excludes initial condition b/c redundant)
+    """
+
+    # initial conditions
+    x0 = x_traj[:, 0, :]                               # shape (mini_batch_size, nx)
+    z0 = model.apply(params, x0, method=model.encode)  # shape (mini_batch_size, z_dim)
+
+    # function to step in latent space
+    def step_fn(z_t, _):
+
+        # estimate next latent state
+        z_t1 = model.apply(params, z_t, method=model.latent_dynamics_residual) # shape (mini_batch_size, z_dim)
+
+        # decode to reconstructed FOM state
+        x_t1_hat = model.apply(params, z_t1, method=model.decode)    # shape (mini_batch_size, nx)
+
+        return z_t1, x_t1_hat  # carry z_t1, output x_t1_hat
+    
+    # loop to rollout the trajectory in latent space
+    z_last, x_hat_traj = jax.lax.scan(step_fn, z0, xs=None, length=x_traj.shape[1]-1)
+
+    # swap axes to get shape (mini_batch_size, N, nx)
+    x_hat_traj = jnp.swapaxes(x_hat_traj, 0, 1)  # shape (mini_batch_size, N, nx)
+
+    # compare the true trajectory (excludes initial condition)
+    x_true_traj = x_traj[:, 1:, :]  # shape (mini_batch_size, N, nx)
+
+    # MSE 
+    mse = jnp.mean((x_hat_traj - x_true_traj)**2)
+
+    return mse
+
 # main loss function with all the loss components
-def loss_fn(params, model, x_t, x_t1, opt_config):
+def loss_fn(params, model, x_traj, opt_config):
     """
     Compute the total loss for the autoencoder model
     
     Args:
         params:      Model parameters
         model:       AutoEncoder model instance
-        x_t:         FOM Input state at time t,   shape (mini_batch_size, nx)
-        x_t1:        FOM Input state at time t+1, shape (mini_batch_size, nx)
+        x_traj:      FOM state full trajectories,   shape (mini_batch_size, N+1, nx)
         opt_config:  OptimizerConfig instance with options
     Returns:
         total_loss:  Combined loss value
         (loss_rec, loss_dyn, loss_reg): Tuple of individual loss components
     """
 
+    # shape of the data
+    nx = x_traj.shape[2]
+
+    # parse the trajectory into pairs
+    x_t  = x_traj[:, :-1, :].reshape(-1, nx)   # shape (mini_batch_size * N, nx)
+    x_t1 = x_traj[:, 1:, :].reshape(-1, nx)    # shape (mini_batch_size * N, nx)
+    
     # Forward pass the AutoEncoder
     x_t_hat, z_t, z_t1_hat = model.apply(params, x_t)
 
@@ -161,21 +210,18 @@ def loss_fn(params, model, x_t, x_t1, opt_config):
     # Latent dynamics loss, λ_dyn * (1/B) * Σ ‖ẑₜ₊₁ − zₜ₊₁‖²
     loss_dyn = opt_config.lambda_dyn * jnp.mean((z_t1_hat - z_t1_true)**2)
 
-    # L2 regularization on model parameters (no reg on the biases), λ_reg * Σ ‖θ‖²
+    # Rollout loss, λ_roll * (1/B) * Σ ‖x̂ₜ₊ₖ − xₜ₊ₖ‖²
+    loss_roll = opt_config.lambda_roll * loss_rollout_fn(params, model, x_traj)
+
+    # L2 model param regularization (no reg on biases), λ_reg * Σ ‖θ‖²
     l2 = sum(jnp.sum(jnp.square(p)) for p in jax.tree_util.tree_leaves(params) if p.ndim > 1)
     loss_reg = opt_config.lambda_reg * l2
 
     # Total loss
-    total_loss = loss_rec + loss_dyn + loss_reg
+    total_loss = loss_rec + loss_dyn + loss_roll + loss_reg
 
-    return total_loss, (loss_rec, loss_dyn, loss_reg)
+    return total_loss, (loss_rec, loss_dyn, loss_roll, loss_reg)
 
-
-############################################################################
-# DATA NORMALIZATION
-############################################################################
-
-# TODO: need normalization functions to condition the data and learning better
 
 ############################################################################
 # TRAINER
@@ -210,9 +256,10 @@ class TrainingConfig:
 class OptimizerConfig:
     
     # Loss weights
-    lambda_rec: float     # reconstruction loss weight
-    lambda_dyn: float     # dynamics loss weight
-    lambda_reg: float     # regularization weight
+    lambda_rec:  float   # reconstruction loss weight
+    lambda_dyn:  float   # dynamics loss weight
+    lambda_roll: float   # rollout loss weight
+    lambda_reg:  float   # regularization weight
 
     # Learning rate
     learning_rate: float  # descending step size
@@ -225,9 +272,10 @@ class Metrics:
     # progress metrics
     step: int        # current training step
     loss: float      # total loss               
-    loss_rec: float  # reconstruction loss      L_rec = λ_r * ‖x̂ₜ − xₜ‖²
-    loss_dyn: float  # dynamics loss            L_dyn = λ_d * ‖ẑₜ₊₁ − zₜ₊₁‖²
-    loss_reg: float  # regularization loss      L_reg = λₗ * ‖θ‖²
+    loss_rec: float  # reconstruction loss      L_rec = λ_rec * (1/B) * Σ  ‖x̂ₜ − xₜ‖²
+    loss_dyn: float  # dynamics loss            L_dyn = λ_dyn * (1/B) * Σ  ‖ẑₜ₊₁ − zₜ₊₁‖²
+    loss_roll: float   # rollout loss             L_ro = λ_ro * (1/B) * Σ  ‖x̂ₜ₊ₖ − xₜ₊ₖ‖²
+    loss_reg: float  # regularization loss      L_reg = λ_reg * ‖θ‖²
 
     # step information
     grad_norm: float   # gradient norm          ‖g‖₂ = ‖∇_θ L‖₂
@@ -283,10 +331,10 @@ class Trainer:
         Generate training data by simulating the FOM from random initial conditions
 
         Args:
-            rng:         JAX random key
+            rng:      JAX random key
         Returns:
-            x_t:   FOM state at time t,   shape (batch_size, nx)
-            x_t1:  FOM state at time t+1, shape (batch_size, nx)
+            x_traj:   FOM state trajectory, shape (batch_size, N+1, nx)
+            rng:      Updated JAX random key
         """
 
         # split the RNG
@@ -304,24 +352,19 @@ class Trainer:
         x_traj_batch = self.ode_solver.forward_propagate_cl_batch(x0_batch,
                                                                   self.sim_config.dt,
                                                                   self.sim_config.N)
-        
-        # parse for training data. x_t removed last point and, x_t1 removed first point
-        x_t = x_traj_batch[:, :-1, :]  # x_{t},   shape (batch_size, N, nx)
-        x_t1 = x_traj_batch[:, 1:, :]  # x_{t+1}, shape (batch_size, N, nx)
 
-        return x_t, x_t1, rng
+        return x_traj_batch, rng
 
 
     # single training step function
     @partial(jax.jit, static_argnums=0, donate_argnums=(1,))
-    def train_step(self, state, x_t, x_t1, step):
+    def train_step(self, state, x_traj, step):
         """
         Single training step
 
         Args:
             state:  Current TrainState (model + optimizer)
-            x_t:    FOM Input state at time t,   shape (mini_batch_size, nx)
-            x_t1:   FOM Input state at time t+1, shape (mini_batch_size, nx)
+            x_traj: FOM Input state trajectory, shape (mini_batch_size, N, nx)
             step:   Current training step (for logging)
         Returns:
             new_state: Updated TrainState after applying gradients
@@ -330,18 +373,17 @@ class Trainer:
 
         # define a loss function wrapper to compute gradients
         def loss_fn_wrap(params):
-            tot_loss, (loss_rec, loss_dyn, loss_reg) = loss_fn(params,      # model parameters to optimize
-                                                               self.model,  # model instance
-                                                               x_t, x_t1,   # input data
-                                                               self.opt_config) # optimizer config
-            return tot_loss, (loss_rec, loss_dyn, loss_reg)
-
+            return loss_fn(params,          # model parameters to optimize
+                           self.model,      # model instance
+                           x_traj,          # input data
+                           self.opt_config) # optimizer config
+            
         # make a function that computes the loss and its gradients
         grad_fn = jax.value_and_grad(loss_fn_wrap,  # function that only takes the model parameters as input
                                      has_aux=True)  # tells JAX that loss_fn returns auxiliary data in addition to the loss value
         
         # compute the loss and gradients w.r.t. the model parameters
-        (loss, (loss_rec, loss_dyn, loss_reg)), grads = grad_fn(state.params)
+        (loss, (loss_rec, loss_dyn, loss_roll, loss_reg)), grads = grad_fn(state.params)
 
         # apply the gradients to update the model parameters
         new_state = state.apply_gradients(grads=grads)
@@ -357,6 +399,7 @@ class Trainer:
                           loss=loss, 
                           loss_rec=loss_rec, 
                           loss_dyn=loss_dyn, 
+                          loss_roll=loss_roll,
                           loss_reg=loss_reg,
                           grad_norm=grad_norm,
                           update_norm=update_norm)
@@ -371,33 +414,25 @@ class Trainer:
         """
 
         # parameters that are reused
-        nx = self.ode_solver.dynamics.nx
         mb_size = self.training_config.mini_batch_size
         print_every = self.training_config.print_every
 
         # loop over training steps
         for step in range(self.training_config.num_steps):
 
-            # generate training data
-            x_t, x_t1, self.rng_data = self.generate_batch_data(self.rng_data)  # shape (batch_size, N, nx)
-
-            # Flatten to (num_pairs, nx). Basically, stacks (N, nx) matrices
-            # Each trajectory contributes N pairs
-            X = x_t.reshape(-1, nx)      # (traj_batch_size * N, nx)
-            Y = x_t1.reshape(-1, nx)     # (traj_batch_size * N, nx)
-
-            # Sample a mini-batch of pairs. Take a subset of the batch size to train
-            num_pairs = X.shape[0]                  # = (traj_batch_size * N)
-            mb = min(mb_size, num_pairs)    # = min{mini_batch_size, traj_batch_size * N}
-
-            # take a random mini-batch of pairs
-            self.rng_data, k_idx = random.split(self.rng_data)     # advance the RNG
-            idx = random.choice(k_idx, num_pairs, shape=(mb,), replace=False) # sample without replacement
-            xb = X[idx]                      # (mini_batch_size, nx)
-            yb = Y[idx]                      # (mini_batch_size, nx)
+            # generate fresh training data
+            x_traj, self.rng_data = self.generate_batch_data(self.rng_data)  # shape (batch_size, N+1, nx)
+            
+            # sample a mini-batch
+            self.rng_data, rng_idx = jax.random.split(self.rng_data)
+            mb_idx = jax.random.choice(rng_idx,
+                                       a=self.training_config.batch_size,
+                                       shape=(mb_size,),
+                                       replace=False)  # shape (mini_batch_size,)
+            xb = x_traj[mb_idx, :, :]                  # shape (mini_batch_size, N+1, nx)
 
             # perform a single training step
-            self.state, metrics = self.train_step(self.state, xb, yb, step)
+            self.state, metrics = self.train_step(self.state, xb, step)
 
             # print Logging info
             if step % print_every == 0:
@@ -406,9 +441,10 @@ class Trainer:
                     f"L_tot = {metrics.loss:.4f}, "
                     f"L_rec = {metrics.loss_rec:.4f}, "
                     f"L_dyn = {metrics.loss_dyn:.4f}, "
+                    f"L_roll = {metrics.loss_roll:.4f}, "
                     f"L_reg = {metrics.loss_reg:.4f}, "
-                    f"Grad Norm = {metrics.grad_norm:.4f}, "
-                    f"Step Norm = {metrics.update_norm:.4f}"
+                    f"‖g‖ = {metrics.grad_norm:.4f}, "
+                    f"‖Δθ‖ = {metrics.update_norm:.4f}"
                 )
 
         return self.state.params  # return the trained model parameters
