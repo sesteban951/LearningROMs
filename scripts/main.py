@@ -7,7 +7,6 @@
 # standard imports 
 import numpy as np                       # standard numpy
 import matplotlib.pyplot as plt          # standard matplotlib
-from mpl_toolkits.mplot3d import Axes3D  # 3D plotting
 import time                              # standard time
 
 # jax imports
@@ -99,6 +98,7 @@ if __name__ == "__main__":
     # fom = Pendulum()
     # fom = VanDerPol()
     fom = LorenzAttractor()
+    # fom = CartPole()
 
     # create the ODE solver with the desired dynamics to integrate
     ode_solver = ODESolver(fom)
@@ -127,7 +127,7 @@ if __name__ == "__main__":
     learning_rate = 5e-4  # learning rate
     lambda_rec = 0.5      # reconstruction loss weight
     lambda_dyn = 0.5      # latent dynamics loss weight
-    lambda_roll = 0.1     # rollout loss weight
+    lambda_roll = 0.2     # rollout loss weight
     lambda_reg = 1e-4     # L2 regularization weight
     opt_config = OptimizerConfig(lambda_rec=lambda_rec,
                                  lambda_dyn=lambda_dyn,
@@ -207,8 +207,10 @@ if __name__ == "__main__":
     z_t = np.array(z_t)
 
     plt.figure(figsize=(6,6))
-    plt.plot(z_t[:, 0], z_t[:, 1], marker='o', alpha=0.7)
-    plt.xlabel("z₁"); plt.ylabel("z₂"); plt.title("Latent trajectory")
+    for i in range(z_t.shape[1]):
+        plt.plot(z_t[:, i], label=f"z dim {i}", marker='o', alpha=0.7)
+    plt.xlabel("time step"); plt.ylabel("latent value"); plt.legend()
+    plt.title("Encoded latent trajectory")
     plt.grid(True); plt.show()
 
     #-----------------------------------------------------------
@@ -221,15 +223,19 @@ if __name__ == "__main__":
     z_t1_true = np.array(z_t1_true)
 
     plt.figure(figsize=(6,6))
-    plt.plot(z_t1_true[:,0], z_t1_true[:,1], label="true z_{t+1}", marker='o', alpha=0.7)
-    plt.plot(z_t1_hat[:,0], z_t1_hat[:,1], label="pred z_{t+1}", marker='o', alpha=0.7)
-    plt.xlabel("z₁"); plt.ylabel("z₂"); plt.legend()
+    for i in range(z_t1_true.shape[1]):
+        (true_line,) = plt.plot(z_t1_true[:, i], label=f"true z[{i}]")
+        color = true_line.get_color()
+        plt.plot(z_t1_hat[:, i], ls='--', color=color, label=f"pred ẑ[{i}]")
+    plt.xlabel("time step"); plt.ylabel("latent value"); plt.legend()
     plt.title("Latent dynamics prediction"); plt.grid(True); plt.show()
 
     #-----------------------------------------------------------
 
     # Rollout comparison
-    x0 = jnp.array([10.0, -8.0, 25.0])  # example IC
+    x_min = trainer.ode_solver.dynamics.x_min
+    x_max = trainer.ode_solver.dynamics.x_max
+    x0 = jax.random.uniform(key, shape=(fom.nx,), minval=x_min, maxval=x_max)
     x_true, x_hat, mse_dim, mse_tot = compare_rollouts(
         ode_solver, ae, params, trainer.normalizer, x0, dt, N
     )
@@ -247,7 +253,7 @@ if __name__ == "__main__":
     plt.legend(ncol=min(4, x_true.shape[1])); plt.tight_layout(); plt.show()
 
     # 3D trajectory plot
-    if x_true.shape[1] >= 3:
+    if x_true.shape[1] == 3:
         fig = plt.figure(figsize=(7,6))
         ax = fig.add_subplot(111, projection='3d')
         ax.plot(x_true[:,0], x_true[:,1], x_true[:,2], label="true", alpha=0.85)
