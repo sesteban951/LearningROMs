@@ -97,21 +97,21 @@ class Controller:
         self.Kd_db = self.T_DSP + (1/self.lam) * self.coth(self.lam * self.T_SSP)  # deadbeat gains
 
         # Raibert foot placement gains
-        self.Kp_raibert = 1.5
-        self.Kd_raibert = 0.3
+        self.Kp_raibert = 1.4
+        self.Kd_raibert = 0.2
 
         # max step increment
         self.u_max = 0.3
 
         # feedforward bias input for stepping
-        self.u_bias = -0.04
+        self.u_bias = -0.035
 
         # which foot stepping controller to use
-        # self.foot_placement_ctrl = "LIP"   # "Raibert" or "LIP"
-        self.foot_placement_ctrl = "Raibert"   # "Raibert" or "LIP"
+        self.foot_placement_ctrl = "LIP"   # "Raibert" or "LIP"
+        # self.foot_placement_ctrl = "Raibert"   # "Raibert" or "LIP"
 
         # velocity command parameters
-        self.vx_cmd_scale = 0.5    # m/s per unit joystick command
+        self.vx_cmd_scale = 0.4    # m/s per unit joystick command
         self.vx_cmd = 0.0          # desired forward velocity (used with joystick if connected)
         self.vx_cmd_prev = 0.0    
         self.vx_cmd_curr = 0.0    
