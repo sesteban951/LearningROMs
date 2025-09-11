@@ -102,12 +102,12 @@ if __name__ == "__main__":
 
     # trajectory parameters
     dt = 0.01     # time step
-    N = 200       # number of time steps to integrate
+    N = 50       # number of time steps to integrate
     sim_config = SimulationConfig(dt=dt, 
                                   N=N)
 
     # training parameters
-    num_steps = 1_500      # number of training steps
+    num_steps = 2_000      # number of training steps
     traj_batch_size = 256  # number of trajectories per batch
     mini_batch_size = 128  # number of trajectories per mini-batch
     print_every = 50       # print every n steps
@@ -117,11 +117,11 @@ if __name__ == "__main__":
                                      print_every=print_every)
 
     # loss function weights
-    learning_rate = 1e-4  # learning rate
+    learning_rate = 5e-4  # learning rate
     lambda_rec = 0.8      # reconstruction loss weight
-    lambda_dyn = 0.5      # latent dynamics loss weight
-    lambda_roll = 0.1     # rollout loss weight
-    lambda_reg = 1e-5     # L2 regularization weight
+    lambda_dyn = 0.4      # latent dynamics loss weight
+    lambda_roll = 0.001     # rollout loss weight
+    lambda_reg = 1e-3     # L2 regularization weight
     opt_config = OptimizerConfig(lambda_rec=lambda_rec,
                                  lambda_dyn=lambda_dyn,
                                  lambda_roll=lambda_roll,
@@ -130,9 +130,9 @@ if __name__ == "__main__":
     
     # auto-encoder parameters
     z_dim = 2          # latent space dimension
-    f_hidden_dim = 64  # hidden layer size for dynamics model
-    E_hidden_dim = 64  # hidden layer size for Encoder
-    D_hidden_dim = 64  # hidden layer size for Decoder
+    f_hidden_dim = 32  # hidden layer size for dynamics model
+    E_hidden_dim = 32  # hidden layer size for Encoder
+    D_hidden_dim = 32  # hidden layer size for Decoder
     ae_config = AutoEncoderConfig(x_dim=fom.nx,
                                   z_dim=z_dim, 
                                   f_hidden_dim=f_hidden_dim, 
@@ -176,7 +176,7 @@ if __name__ == "__main__":
 
     # Pick one trajectory from the batch
     key = jax.random.PRNGKey(42)
-    x_t, _, _ = trainer.generate_batch_data(key)  # shape (batch_size, N, nx)
+    x_t, _ = trainer.generate_batch_data(key)  # shape (batch_size, N+1, nx)
     x_true = np.array(x_t[0])  # shape (N, nx)
 
     # Reconstruct
