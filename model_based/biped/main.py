@@ -9,7 +9,7 @@ import glfw
 
 # custom includes 
 from indeces import Biped_IDX
-from model_based.biped.utils import InverseKinematics, bezier_curve, Joy
+from utils import InverseKinematics, bezier_curve, Joy
 
 ##################################################################################
 
