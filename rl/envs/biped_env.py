@@ -23,30 +23,37 @@ class BipedConfig:
     physics_steps_per_control_step: int = 10
 
     # Reward function coefficients
-    reward_base_height: float = 5.0  # base height target
+    reward_base_height: float = 1.0  # base height target
     reward_base_orient: float = 0.25  # base orientation target
     reward_base_vx: float = 0.8      # forward velocity
     reward_base_vz: float = 0.1      # vertical velocity
     reward_base_omega: float = 0.1   # angular velocity
-    reward_joint_pos: float = 0.5    # joint position target
-    reward_joint_vel: float = 0.05    # joint velocity target
-    reward_control: float = 1e-6     # control cost
+    reward_joint_pos: float = 0.01    # joint position target
+    reward_joint_vel: float = 0.01    # joint velocity target
+    reward_control: float = 1e-6    # control cost
+
+    # alive reward bonus (if not terminated)
+    reward_alive: float = 0.3
 
     # Ranges for sampling initial conditions
     lb_base_theta_pos: float = -jnp.pi / 4.0  # base theta pos limits
     ub_base_theta_pos: float =  jnp.pi / 4.0
-    lb_base_cart_vel: float = -1.0     # base cart vel limits
-    ub_base_cart_vel: float =  1.0
-    lb_base_theta_vel: float = -1.0    # base theta vel limits
-    ub_base_theta_vel: float =  1.0
+    lb_base_cart_vel: float = -3.0     # base cart vel limits
+    ub_base_cart_vel: float =  3.0
+    lb_base_theta_vel: float = -3.0    # base theta vel limits
+    ub_base_theta_vel: float =  3.0
     
     lb_hip_joint_pos: float = -jnp.pi * 0.8  # hip joint pos limits
     ub_hip_joint_pos: float =  jnp.pi * 0.8
     lb_knee_joint_pos: float = -2.4 * 0.8    # knee joint pos limits
     ub_knee_joint_pos: float =  0.0
-    lb_joint_vel: float = -1.0         # joint vel limits
-    ub_joint_vel: float =  1.0
+    lb_joint_vel: float = -3.0         # joint vel limits
+    ub_joint_vel: float =  3.0
 
+    # termination conditions
+    min_base_height: float = 0.5      # terminate if falls below this height
+    max_abs_pitch_rad: float = 1.5    # terminate if base pitch exceeds this value
+    min_steps_before_done: int = 5    # tiny grace period after reset
 
 # environment class
 class BipedEnv(PipelineEnv):
@@ -78,7 +85,17 @@ class BipedEnv(PipelineEnv):
         key_id = mujoco.mj_name2id(mj_model, mujoco.mjtObj.mjOBJ_KEY, key_name)
         self.qpos_stand = jnp.array(mj_model.key_qpos[key_id])
 
-        # insantiate the parent class
+        # foot touch sensors
+        left_foot_touch_snesor_name = "left_foot_touch"
+        right_foot_touch_snesor_name = "right_foot_touch"
+        left_foot_sensor_id = mujoco.mj_name2id(mj_model, mujoco.mjtObj.mjOBJ_SENSOR, left_foot_touch_snesor_name)
+        right_foot_sensor_id = mujoco.mj_name2id(mj_model, mujoco.mjtObj.mjOBJ_SENSOR, right_foot_touch_snesor_name)
+        self.left_adr = mj_model.sensor_adr[left_foot_sensor_id]   
+        self.right_adr = mj_model.sensor_adr[right_foot_sensor_id] 
+        self.left_dim = mj_model.sensor_dim[left_foot_sensor_id]
+        self.right_dim = mj_model.sensor_dim[right_foot_sensor_id]
+
+        # instantiate the parent class
         super().__init__(
             sys=sys,                                             # brax system defining the kinematic tree and other properties
             backend="mjx",                                       # defining the physics pipeline
@@ -107,13 +124,13 @@ class BipedEnv(PipelineEnv):
         rng, rng1, rng2 = jax.random.split(rng, 3)
 
         # sample generalized position
-        q_pos_lb = jnp.array([-0.01, 0.85, 
+        q_pos_lb = jnp.array([-0.01, 0.7, 
                               self.config.lb_base_theta_pos,
                               self.config.lb_hip_joint_pos,
                               self.config.lb_knee_joint_pos,
                               self.config.lb_hip_joint_pos,
                               self.config.lb_knee_joint_pos])
-        q_pos_ub = jnp.array([0.01, 0.86,
+        q_pos_ub = jnp.array([0.01, 0.9,
                               self.config.ub_base_theta_pos,
                               self.config.ub_hip_joint_pos,
                               self.config.ub_knee_joint_pos,
@@ -228,11 +245,24 @@ class BipedEnv(PipelineEnv):
         reward_base_omega = -self.config.reward_base_omega * base_omega_err
         reward_joint_vel = -self.config.reward_joint_vel * joint_vel_err
         reward_control  = -self.config.reward_control * control_err
-    
+
+        # termination conditions
+        below_height = base_height < self.config.min_base_height
+        tilted_over = jnp.abs(base_theta) > self.config.max_abs_pitch_rad
+
+        # small grace window to avoid instant termination on the first few frames after reset
+        after_grace_period = state.info["step"] >= self.config.min_steps_before_done
+
+        # determine if should terminate
+        done = jnp.where((below_height | tilted_over) & after_grace_period, 1.0, 0.0)
+
+        # if not terminated, give a small alive bonus
+        reward_alive = self.config.reward_alive * (1.0 - done)
+
         # compute the total reward
         reward = (reward_base_height + reward_base_orient + reward_joint_pos +
                   reward_base_vx + reward_base_vz + reward_base_omega + reward_joint_vel + 
-                  reward_control)
+                  reward_control + reward_alive)
 
         # update the metrics and info dictionaries
         state.metrics["reward_base_height"] = reward_base_height
@@ -247,7 +277,8 @@ class BipedEnv(PipelineEnv):
 
         return state.replace(pipeline_state=data,
                              obs=obs,
-                             reward=reward)
+                             reward=reward,
+                             done=done)
 
     # internal function to compute the observation
     def _compute_obs(self, data):
@@ -271,19 +302,29 @@ class BipedEnv(PipelineEnv):
         # full velocity state
         qvel = data.qvel
 
-        
+        # --- foot contact flags from sensors ---
+        sd = data.sensordata  # mjx exposes sensordata
+        l_touch = sd[self.left_adr : self.left_adr + self.left_dim][0]
+        r_touch = sd[self.right_adr: self.right_adr + self.right_dim][0]
+
+        # convert to {0,1}; clamp to be JAX-friendly
+        contact_eps = 1e-3
+        left_in_contact  = jnp.where(l_touch > contact_eps, 1.0, 0.0)
+        right_in_contact = jnp.where(r_touch > contact_eps, 1.0, 0.0)
+        foot_contacts = jnp.array([left_in_contact, right_in_contact])
 
         # compute the observation
-        obs = jnp.concatenate([base_pos,  # height, cos(theta), sin(theta)
-                               joint_pos, # joint positions
-                               qvel])     # full velocity state
+        obs = jnp.concatenate([base_pos,       # height, cos(theta), sin(theta)
+                               joint_pos,      # joint positions
+                               qvel,           # full velocity state
+                               foot_contacts]) # foot contact flags    
 
         return obs
     
     @property
     def observation_size(self):
         """Returns the size of the observation space."""
-        return 14
+        return 16
 
     @property
     def action_size(self):

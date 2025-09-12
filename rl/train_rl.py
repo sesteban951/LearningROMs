@@ -111,21 +111,38 @@ if __name__ == "__main__":
     env = envs.get_environment("biped")
     ppo_config = dict(
         num_timesteps=15_000_000,      # total training timesteps
-        num_evals=10,                  # number of evaluations
+        num_evals=20,                  # number of evaluations
         reward_scaling=0.1,            # reward scale
         episode_length=1500,            # max episode length
         normalize_observations=True,   # normalize observations
-        unroll_length=40,              # PPO unroll length
+        unroll_length=10,              # PPO unroll length
         num_minibatches=64,            # PPO minibatches
         num_updates_per_batch=16,       # PPO updates per batch
         discounting=0.97,              # gamma
         learning_rate=5e-4,            # optimizer LR
         clipping_epsilon=0.2,          # PPO clipping epsilon
         entropy_cost=1e-4,             # entropy bonus
-        num_envs=4096,                 # parallel envs
-        batch_size=4096,               # batch size
+        num_envs=2048,                 # parallel envs
+        batch_size=2048,               # batch size
         seed=0,                        # RNG seed
     )
+    # ppo_config = dict(
+    #     num_timesteps=15_000_000,
+    #     num_evals=13,                 # ~15.7M printed steps with settings below
+    #     reward_scaling=0.1,
+    #     episode_length=1500,
+    #     normalize_observations=True,
+    #     unroll_length=10,
+    #     num_minibatches=64,
+    #     num_updates_per_batch=12,     # a touch lower for stability
+    #     discounting=0.97,
+    #     learning_rate=5e-4,
+    #     clipping_epsilon=0.2,
+    #     entropy_cost=3e-4,            # anneal to 1e-4 later
+    #     num_envs=2048,
+    #     batch_size=20480,             # use all collected data
+    #     seed=0,
+    # )
 
     #----------------------- TRAIN -----------------------#
 

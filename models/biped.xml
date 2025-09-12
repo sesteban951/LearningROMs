@@ -68,6 +68,12 @@
         </body>
 	</worldbody>
 
+    <sensor>
+        <!-- For contact sensing -->
+        <touch name="left_foot_touch"  site="left_foot_site"/>
+        <touch name="right_foot_touch" site="right_foot_site"/>
+    </sensor>
+
     <!-- Actuators -->
 	<actuator>
 		<motor name="hip_left_motor" joint="left_hip_joint" ctrllimited="true" ctrlrange="-1 1" gear="25"/>
