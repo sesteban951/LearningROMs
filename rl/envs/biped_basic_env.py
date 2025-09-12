@@ -24,12 +24,13 @@ class BipedBasicConfig:
 
     # Reward function coefficients
     reward_com_height: float = 1.0  # center of mass height target
-    reward_forward: float = 3.0      # forward velocity target
+    reward_forward: float = 1.0      # forward velocity target
     reward_control: float = 1e-4     # control cost
-    reward_alive: float = 5.0        # alive reward bonus (if not terminated)
+    reward_alive: float = 1.0        # alive reward bonus (if not terminated)
 
     # desired values
     com_des: float = 0.75  # desired center of mass height
+    vel_des: float = 0.5  # desired forward velocity
 
     # termination conditions
     min_com_height: float = 0.5      # terminate if falls below this height
@@ -199,22 +200,23 @@ class BipedBasicEnv(PipelineEnv):
         obs = self._compute_obs(data, action)
 
         # extract data
-        com_pos0 = self._compute_com(data0)[2]
-        com_pos  = self._compute_com(data)[2]
-        com_vel = (com_pos - com_pos0) / self.dt
+        com_pos0 = self._compute_com(data0)
+        com_pos  = self._compute_com(data)
+        com_vel = (com_pos[0] - com_pos0[0]) / self.dt
         base_theta = data.qpos[2]
 
         # compute errors
-        com_pos_err  = jnp.abs(com_pos - self.config.com_des)
+        com_pos_err  = jnp.abs(com_pos[2] - self.config.com_des)
+        com_vel_err = jnp.square(com_vel - self.config.vel_des)
         tau_err = jnp.square(action).sum()
 
         # compute the reward terms
         reward_com_height = -self.config.reward_com_height * com_pos_err
-        reward_forward = self.config.reward_forward * com_vel
+        reward_forward = -self.config.reward_forward * com_vel_err
         reward_control = -self.config.reward_control * tau_err
 
         # termination conditions
-        below_height = com_pos < self.config.min_com_height
+        below_height = com_pos[2] < self.config.min_com_height
         tilted_over = jnp.abs(base_theta) > self.config.max_base_pitch
 
         # small grace window to avoid instant termination on the first few frames after reset
@@ -327,7 +329,7 @@ class BipedBasicEnv(PipelineEnv):
     @property
     def observation_size(self):
         """Returns the size of the observation space."""
-        return 16
+        return 20
 
     @property
     def action_size(self):

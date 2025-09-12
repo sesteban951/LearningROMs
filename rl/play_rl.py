@@ -45,7 +45,7 @@ if __name__ == "__main__":
     # Load the environment and policy parameters
     # env = envs.get_environment("biped")
     env = envs.get_environment("biped_basic")
-    params_path = "./rl/policy/biped_policy_2025_09_12_15_22_16.pkl"
+    params_path = "./rl/policy/biped_policy_2025_09_12_16_25_10.pkl"
 
     # Load the environment and policy parameters
     # env = envs.get_environment("hopper")
