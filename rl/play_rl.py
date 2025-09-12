@@ -23,6 +23,7 @@ import mujoco.viewer
 from envs.cart_pole_env import CartPoleEnv
 from envs.acrobot_env import AcrobotEnv
 from envs.biped_env import BipedEnv
+from envs.biped_basic_env import BipedBasicEnv
 from envs.hopper_env import HopperEnv
 from envs.paddle_ball_env import PaddleBallEnv
 from algorithms.ppo_play import PPO_Play
@@ -42,8 +43,9 @@ if __name__ == "__main__":
     # params_path = "./rl/policy/acrobot_policy.pkl"
 
     # Load the environment and policy parameters
-    env = envs.get_environment("biped")
-    params_path = "./rl/policy/biped_policy_2025_09_11_21_22_16.pkl"
+    # env = envs.get_environment("biped")
+    env = envs.get_environment("biped_basic")
+    params_path = "./rl/policy/biped_policy_2025_09_12_15_22_16.pkl"
 
     # Load the environment and policy parameters
     # env = envs.get_environment("hopper")
@@ -89,6 +91,8 @@ if __name__ == "__main__":
     wall_start = time.time()
     last_render = 0.0
 
+    act = jnp.zeros(env.action_size)
+
     # start the interactive simulation
     with mujoco.viewer.launch_passive(mj_model, mj_data) as viewer:
 
@@ -116,7 +120,8 @@ if __name__ == "__main__":
                 mjx_data = mjx_data.replace(qpos=qpos, qvel=qvel)
 
                 # compute the observation
-                obs = obs_fn(mjx_data)   # obs is a jax array
+                # obs = obs_fn(mjx_data)   # obs is a jax array
+                obs = obs_fn(mjx_data, act)   # obs is a jax array
 
                 # compute the action
                 act = policy_fn(obs)  # act is a jax array

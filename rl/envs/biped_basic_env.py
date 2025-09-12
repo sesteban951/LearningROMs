@@ -13,7 +13,7 @@ import mujoco
 
 # struct to hold the configuration parameters
 @struct.dataclass
-class BipedConfig:
+class BipedBasicConfig:
     """Config dataclass for biped."""
 
     # model path (NOTE: relative the script that calls this class)
@@ -23,40 +23,37 @@ class BipedConfig:
     physics_steps_per_control_step: int = 10
 
     # Reward function coefficients
-    reward_base_height: float = 10.0  # base height target
-    reward_base_orient: float = 0.1  # base orientation target
-    reward_base_vx: float = 10.0      # forward velocity
-    reward_base_vz: float = 0.1      # vertical velocity
-    reward_base_omega: float = 0.1   # angular velocity
-    reward_joint_pos: float = 0.0    # joint position target
-    reward_joint_vel: float = 0.0    # joint velocity target
-    reward_control: float = 0.0    # control cost
+    reward_com_height: float = 1.0  # center of mass height target
+    reward_forward: float = 3.0      # forward velocity target
+    reward_control: float = 1e-4     # control cost
+    reward_alive: float = 5.0        # alive reward bonus (if not terminated)
 
-    # alive reward bonus (if not terminated)
-    reward_alive: float = 0.3
+    # desired values
+    com_des: float = 0.75  # desired center of mass height
+
+    # termination conditions
+    min_com_height: float = 0.5      # terminate if falls below this height
+    max_base_pitch: float = 1.5      # terminate if base pitch exceeds this value
+    min_steps_before_done: int = 5   # tiny grace period after reset
 
     # Ranges for sampling initial conditions
-    lb_base_theta_pos: float = -1.2    # base theta pos limits
-    ub_base_theta_pos: float =  1.2
-    lb_base_cart_vel: float = -3.0     # base cart vel limits
-    ub_base_cart_vel: float =  3.0
-    lb_base_theta_vel: float = -3.0    # base theta vel limits
-    ub_base_theta_vel: float =  3.0
-    
+    lb_base_theta_pos: float = -jnp.pi / 3.0  # base theta pos limits
+    ub_base_theta_pos: float =  jnp.pi / 3.0
+    lb_base_cart_vel: float = -0.1     # base cart vel limits
+    ub_base_cart_vel: float =  0.1
+    lb_base_theta_vel: float = -0.1    # base theta vel limits
+    ub_base_theta_vel: float =  0.1
+    lb_base_angular_vel: float = -0.1   # base angular vel limits
+    ub_base_angular_vel: float =  0.1
     lb_hip_joint_pos: float =  (-jnp.pi / 2.0) * 0.8  # hip joint pos limits
     ub_hip_joint_pos: float =  ( jnp.pi / 2.0) * 0.8
     lb_knee_joint_pos: float = (-2.4) * 0.8    # knee joint pos limits
     ub_knee_joint_pos: float =  0.0
-    lb_joint_vel: float = -3.0         # joint vel limits
-    ub_joint_vel: float =  3.0
-
-    # termination conditions
-    min_base_height: float = 0.5      # terminate if falls below this height
-    max_abs_pitch_rad: float = 1.5    # terminate if base pitch exceeds this value
-    min_steps_before_done: int = 5    # tiny grace period after reset
+    lb_joint_vel: float = -0.1         # joint vel limits
+    ub_joint_vel: float =  0.1
 
 # environment class
-class BipedEnv(PipelineEnv):
+class BipedBasicEnv(PipelineEnv):
     """
     Environment for training a planar biped walking task.
     Close to: https://gymnasium.farama.org/environments/mujoco/walker2d/
@@ -66,7 +63,7 @@ class BipedEnv(PipelineEnv):
     """
 
     # initialize the environment
-    def __init__(self, config: BipedConfig = BipedConfig()):
+    def __init__(self, config: BipedBasicConfig = BipedBasicConfig()):
 
         # robot name
         self.robot_name = "biped"
@@ -79,9 +76,7 @@ class BipedEnv(PipelineEnv):
         # see https://colab.research.google.com/github/google-deepmind/mujoco/blob/main/mjx/tutorial.ipynb
         mj_model = mujoco.MjModel.from_xml_path(self.config.model_path)
         sys = mjcf.load_model(mj_model)
-
-        # load the sim dt
-        self.sim_dt = mj_model.opt.timestep
+        self.sys = sys
 
         # get default keyframe
         key_name = "standing"
@@ -108,7 +103,7 @@ class BipedEnv(PipelineEnv):
         # n_frames: number of sim steps per control step, dt = n_frames * xml_dt
 
         # print message
-        print(f"Initialized BipedEnv with model [{self.config.model_path}].")
+        print(f"Initialized BipedBasicEnv with model [{self.config.model_path}].")
 
     # reset function
     def reset(self, rng):
@@ -160,20 +155,17 @@ class BipedEnv(PipelineEnv):
         data = self.pipeline_init(qpos, qvel)
 
         # reset the observation
-        obs = self._compute_obs(data)
+        action  = jnp.zeros(self.action_size)  # assume zero initial action
+        obs = self._compute_obs(data, action)
 
         # reset reward
         reward, done = jnp.zeros(2)
 
         # reset the metrics
-        metrics = {"reward_base_height": 0.0,
-                   "reward_base_orient": 0.0,
-                   "reward_base_vx": 0.0,
-                   "reward_base_vz": 0.0,
-                   "reward_base_omega": 0.0,
-                   "reward_joint_pos": 0.0,
-                   "reward_joint_vel": 0.0,
-                   "reward_control": 0.0
+        metrics = {"reward_com_height": 0.0,
+                   "reward_forward": 0.0,
+                   "reward_control": 0.0,
+                   "reward_alive": 0.0
                    }
 
         # state info
@@ -199,64 +191,31 @@ class BipedEnv(PipelineEnv):
                     The action to be applied to the environment.
         """
 
-        # save the old state
+        # initial and final pipline state
         data0 = state.pipeline_state
-
-        # step the physics
-        data = self.pipeline_step(state.pipeline_state, action)
+        data  = self.pipeline_step(data0, action)
 
         # update the observations
-        obs = self._compute_obs(data)
+        obs = self._compute_obs(data, action)
 
-        # data
-        base_height = data.qpos[1]
+        # extract data
+        com_pos0 = self._compute_com(data0)[2]
+        com_pos  = self._compute_com(data)[2]
+        com_vel = (com_pos - com_pos0) / self.dt
         base_theta = data.qpos[2]
-        joint_pos = data.qpos[3:]
-        base_px_old = data0.qpos[0]
-        base_px = data.qpos[0]
-        base_vx = (base_px - base_px_old) / self.sim_dt
-        base_vz = data.qvel[1]
-        base_omega = data.qvel[2]
-        joint_vel = data.qvel[3:]
-        tau = data.ctrl
 
-        # desired values
-        base_height_des = 0.83
-        base_theta_des = -0.0
-        cos_theta_des = jnp.cos(base_theta_des)
-        sin_theta_des = jnp.sin(base_theta_des)
-        base_vx_des = 0.5
-        joint_pos_des = self.qpos_stand[3:]
-
-        # special angle error
-        cos_theta = jnp.cos(base_theta)
-        sin_theta = jnp.sin(base_theta)
-        base_theta_err_vec = jnp.array([cos_theta - cos_theta_des, 
-                                        sin_theta - sin_theta_des]) # want (0, 0)
-
-        # compute error terms
-        height_err = jnp.square(base_height - base_height_des).sum()
-        orient_err = jnp.square(base_theta_err_vec).sum()
-        joint_pos_err = jnp.square(joint_pos - joint_pos_des).sum()
-        base_vx_err = jnp.square(base_vx - base_vx_des).sum()
-        base_vz_err = jnp.square(base_vz).sum()
-        base_omega_err = jnp.square(base_omega).sum()
-        joint_vel_err = jnp.square(joint_vel).sum()
-        control_err = jnp.square(tau).sum()
+        # compute errors
+        com_pos_err  = jnp.abs(com_pos - self.config.com_des)
+        tau_err = jnp.square(action).sum()
 
         # compute the reward terms
-        reward_base_height = -self.config.reward_base_height * height_err
-        reward_base_orient = -self.config.reward_base_orient * orient_err
-        reward_joint_pos = -self.config.reward_joint_pos * joint_pos_err
-        reward_base_vx = -self.config.reward_base_vx * base_vx_err
-        reward_base_vz = -self.config.reward_base_vz * base_vz_err
-        reward_base_omega = -self.config.reward_base_omega * base_omega_err
-        reward_joint_vel = -self.config.reward_joint_vel * joint_vel_err
-        reward_control  = -self.config.reward_control * control_err
+        reward_com_height = -self.config.reward_com_height * com_pos_err
+        reward_forward = self.config.reward_forward * com_vel
+        reward_control = -self.config.reward_control * tau_err
 
         # termination conditions
-        below_height = base_height < self.config.min_base_height
-        tilted_over = jnp.abs(base_theta) > self.config.max_abs_pitch_rad
+        below_height = com_pos < self.config.min_com_height
+        tilted_over = jnp.abs(base_theta) > self.config.max_base_pitch
 
         # small grace window to avoid instant termination on the first few frames after reset
         after_grace_period = state.info["step"] >= self.config.min_steps_before_done
@@ -268,19 +227,13 @@ class BipedEnv(PipelineEnv):
         reward_alive = self.config.reward_alive * (1.0 - done)
 
         # compute the total reward
-        reward = (reward_base_height + reward_base_orient + reward_joint_pos +
-                  reward_base_vx + reward_base_vz + reward_base_omega + reward_joint_vel + 
-                  reward_control + reward_alive)
+        reward = (reward_com_height + reward_forward + reward_control + reward_alive)
 
         # update the metrics and info dictionaries
-        state.metrics["reward_base_height"] = reward_base_height
-        state.metrics["reward_base_orient"] = reward_base_orient
-        state.metrics["reward_base_vx"] = reward_base_vx
-        state.metrics["reward_base_vz"] = reward_base_vz
-        state.metrics["reward_base_omega"] = reward_base_omega
-        state.metrics["reward_joint_pos"] = reward_joint_pos
-        state.metrics["reward_joint_vel"] = reward_joint_vel
+        state.metrics["reward_com_height"] = reward_com_height
+        state.metrics["reward_forward"] = reward_forward
         state.metrics["reward_control"] = reward_control
+        state.metrics["reward_alive"] = reward_alive
         state.info["step"] += 1
 
         return state.replace(pipeline_state=data,
@@ -289,13 +242,15 @@ class BipedEnv(PipelineEnv):
                              done=done)
 
     # internal function to compute the observation
-    def _compute_obs(self, data):
+    def _compute_obs(self, data, action):
         """
         Compute the observation from the physics state.
 
         Args:
             data: brax.physics.base.State object
                   The physics state of the environment.
+            action: jax.Array
+                    The action to be applied to the environment.
         """
 
         # base height
@@ -325,10 +280,50 @@ class BipedEnv(PipelineEnv):
         obs = jnp.concatenate([base_pos,       # height, cos(theta), sin(theta)
                                joint_pos,      # joint positions
                                qvel,           # full velocity state
-                               foot_contacts]) # foot contact flags    
+                               foot_contacts,  # foot contact flags    
+                               action])        # previous action
 
         return obs
     
+    # method to compute the center of mass of the robot
+    def _compute_com(self, data):
+        """
+        Compute the center of mass of the model in world frame.
+
+        Args:
+            data: brax.physics.base.State object
+                  The physics state of the environment.
+        Returns:
+            com: jax.Array
+                 The (x, y, z) position of the center of mass of the model.
+        """
+
+        # compute the inertia
+        inertia = self.sys.link.inertia
+        
+        # If you ever switch to 'spring' or 'positional' backends, keep this block.
+        if self.backend in ('spring', 'positional'):
+
+            # Reweight mass/inertia to match spring settings
+            i_diag = jax.vmap(jnp.diagonal)(inertia.i)
+            i_scaled = jax.vmap(jnp.diag)(i_diag ** (1.0 - self.sys.spring_inertia_scale))
+            inertia = inertia.replace(
+                i=i_scaled,
+                mass=inertia.mass ** (1.0 - self.sys.spring_mass_scale),
+            )
+
+        # total mass
+        mass_sum = jnp.sum(inertia.mass)
+    
+        # Transform each link pose to its COM pose
+        x_i = data.x.vmap().do(inertia.transform)
+
+        # compute the com
+        com = jnp.sum(jax.vmap(jnp.multiply)(inertia.mass[:, None], x_i.pos), axis=0) / mass_sum
+
+        return com
+
+
     @property
     def observation_size(self):
         """Returns the size of the observation space."""
@@ -341,4 +336,4 @@ class BipedEnv(PipelineEnv):
 
 
 # register the environment
-envs.register_environment("biped", BipedEnv)
+envs.register_environment("biped_basic", BipedBasicEnv)

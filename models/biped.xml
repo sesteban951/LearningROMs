@@ -2,7 +2,7 @@
 <mujoco model="biped">
 
 	<!-- Simulation Parameters -->
-	<option timestep="0.002" iterations="10" ls_iterations="5" solver="Newton">
+	<option timestep="0.002" iterations="15" ls_iterations="5" solver="Newton">
 		<flag eulerdamp="disable"/>
 	</option>
 
@@ -76,10 +76,10 @@
 
     <!-- Actuators -->
 	<actuator>
-		<motor name="hip_left_motor" joint="left_hip_joint" ctrllimited="true" ctrlrange="-1 1" gear="25"/>
-    	<motor name="knee_left_motor" joint="left_knee_joint" ctrllimited="true" ctrlrange="-1 1" gear="25"/>
-		<motor name="hip_right_motor" joint="right_hip_joint" ctrllimited="true" ctrlrange="-1 1" gear="25"/>
-		<motor name="knee_right_motor" joint="right_knee_joint" ctrllimited="true" ctrlrange="-1 1" gear="25"/>
+		<motor name="hip_left_motor" joint="left_hip_joint" ctrllimited="true" ctrlrange="-1 1" gear="50"/>
+    	<motor name="knee_left_motor" joint="left_knee_joint" ctrllimited="true" ctrlrange="-1 1" gear="50"/>
+		<motor name="hip_right_motor" joint="right_hip_joint" ctrllimited="true" ctrlrange="-1 1" gear="50"/>
+		<motor name="knee_right_motor" joint="right_knee_joint" ctrllimited="true" ctrlrange="-1 1" gear="50"/>
 	</actuator>
 
     <!-- default configuration (when you press "Load key" button) -->

@@ -16,6 +16,7 @@ from brax import envs
 from envs.cart_pole_env import CartPoleEnv, CartPoleConfig
 from envs.acrobot_env import AcrobotEnv, AcrobotConfig
 from envs.biped_env import BipedEnv, BipedConfig
+from envs.biped_basic_env import BipedBasicEnv, BipedBasicConfig
 from envs.hopper_env import HopperEnv, HopperConfig
 from envs.paddle_ball_env import PaddleBallEnv, PaddleBallConfig
 from algorithms.ppo_train import PPO_Train
@@ -108,22 +109,23 @@ if __name__ == "__main__":
     # )
 
     # Initialize the environment and PPO hyperparameters
-    env = envs.get_environment("biped")
+    # env = envs.get_environment("biped")
+    env = envs.get_environment("biped_basic")
     ppo_config = dict(
-        num_timesteps=15_000_000,      # total training timesteps
-        num_evals=20,                  # number of evaluations
-        reward_scaling=0.1,            # reward scale
+        num_timesteps=10_000_000,      # total training timesteps
+        num_evals=10,                  # number of evaluations
+        reward_scaling=1.0,            # reward scale
         episode_length=1500,            # max episode length
         normalize_observations=True,   # normalize observations
         unroll_length=10,              # PPO unroll length
         num_minibatches=64,            # PPO minibatches
-        num_updates_per_batch=16,       # PPO updates per batch
+        num_updates_per_batch=8,       # PPO updates per batch
         discounting=0.97,              # gamma
         learning_rate=5e-4,            # optimizer LR
         clipping_epsilon=0.2,          # PPO clipping epsilon
         entropy_cost=1e-4,             # entropy bonus
-        num_envs=2048,                 # parallel envs
-        batch_size=2048,               # batch size
+        num_envs=1024,                 # parallel envs
+        batch_size=1024,               # batch size
         seed=0,                        # RNG seed
     )
     # ppo_config = dict(
