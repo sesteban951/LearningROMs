@@ -19,18 +19,18 @@ class BipedBasicConfig:
     model_path: str = "./models/biped.xml"
 
     # number of "simulation steps" for every control input
-    physics_steps_per_control_step: int = 10
+    physics_steps_per_control_step: int = 8
 
     # Reward function coefficients
-    reward_com_height: float = 2.0  # center of mass height target
-    reward_orientation: float = 0.1   # torso orientation target
-    # reward_joint_pos: 
-    reward_forward: float = 1.5      # forward velocity target
+    reward_com_height: float = 2.0   # center of mass height target
+    reward_orientation: float = 0.5  # torso orientation target
+    reward_joint_pos: float = 0.05    # joint position target
+    reward_forward: float = 2.0      # forward velocity target
     reward_control: float = 1e-4     # control cost
     reward_alive: float = 1.0        # alive reward bonus (if not terminated)
 
     # desired values
-    com_des: float = 0.75    # desired center of mass height
+    com_des: float = 0.8    # desired center of mass height
     vel_des: float = 1.0     # desired forward velocity
     theta_des: float = -0.1  # desired torso lean angle
 
@@ -83,15 +83,15 @@ class BipedBasicEnv(PipelineEnv):
         key_name = "standing"
         key_id = mujoco.mj_name2id(mj_model, mujoco.mjtObj.mjOBJ_KEY, key_name)
         self.qpos_stand = jnp.array(mj_model.key_qpos[key_id])
-        self.q_joints_stand = self.qpos_stand[2:]  # joint positions only
+        self.q_joints_stand = self.qpos_stand[3:]  # joint positions only
 
         # foot touch sensors
-        left_foot_touch_snesor_name = "left_foot_touch"
-        right_foot_touch_snesor_name = "right_foot_touch"
-        left_foot_sensor_id = mujoco.mj_name2id(mj_model, mujoco.mjtObj.mjOBJ_SENSOR, left_foot_touch_snesor_name)
-        right_foot_sensor_id = mujoco.mj_name2id(mj_model, mujoco.mjtObj.mjOBJ_SENSOR, right_foot_touch_snesor_name)
-        self.left_adr = mj_model.sensor_adr[left_foot_sensor_id]   
-        self.right_adr = mj_model.sensor_adr[right_foot_sensor_id] 
+        left_foot_touch_sensor_name = "left_foot_touch"
+        right_foot_touch_sensor_name = "right_foot_touch"
+        left_foot_sensor_id = mujoco.mj_name2id(mj_model, mujoco.mjtObj.mjOBJ_SENSOR, left_foot_touch_sensor_name)
+        right_foot_sensor_id = mujoco.mj_name2id(mj_model, mujoco.mjtObj.mjOBJ_SENSOR, right_foot_touch_sensor_name)
+        self.left_adr = mj_model.sensor_adr[left_foot_sensor_id]
+        self.right_adr = mj_model.sensor_adr[right_foot_sensor_id]
         self.left_dim = mj_model.sensor_dim[left_foot_sensor_id]
         self.right_dim = mj_model.sensor_dim[right_foot_sensor_id]
 
@@ -167,6 +167,7 @@ class BipedBasicEnv(PipelineEnv):
         metrics = {"reward_com_height": 0.0,
                    "reward_forward": 0.0,
                    "reward_orientation": 0.0,
+                   "reward_joint_pos": 0.0,
                    "reward_control": 0.0,
                    "reward_alive": 0.0
                    }
@@ -208,6 +209,7 @@ class BipedBasicEnv(PipelineEnv):
         base_theta = data.qpos[2]
         cos_theta = jnp.cos(base_theta)
         sin_theta = jnp.sin(base_theta)
+        joint_pos = data.qpos[3:]
 
         # special angle error
         cos_theta_des = jnp.cos(self.config.theta_des)
@@ -219,12 +221,14 @@ class BipedBasicEnv(PipelineEnv):
         com_pos_err  = jnp.abs(com_pos[2] - self.config.com_des)
         com_vel_err = jnp.square(com_vel - self.config.vel_des)
         base_theta_err = jnp.square(base_theta_vec).sum()
+        joint_pos_err = jnp.square(joint_pos - self.q_joints_stand).sum()
         tau_err = jnp.square(data.ctrl).sum()
 
         # compute the reward terms
         reward_com_height = -self.config.reward_com_height * com_pos_err
         reward_forward = -self.config.reward_forward * com_vel_err
         reward_orientation = -self.config.reward_orientation * base_theta_err
+        reward_joint_pos = -self.config.reward_joint_pos * joint_pos_err
         reward_control = -self.config.reward_control * tau_err
 
         # termination conditions
@@ -242,12 +246,14 @@ class BipedBasicEnv(PipelineEnv):
 
         # compute the total reward
         reward = (reward_com_height + reward_forward + reward_orientation +
+                  reward_joint_pos +
                   reward_control + reward_alive)
 
         # update the metrics and info dictionaries
         state.metrics["reward_com_height"] = reward_com_height
         state.metrics["reward_forward"] = reward_forward
         state.metrics["reward_orientation"] = reward_orientation
+        state.metrics["reward_joint_pos"] = reward_joint_pos
         state.metrics["reward_control"] = reward_control
         state.metrics["reward_alive"] = reward_alive
         state.info["step"] += 1
@@ -298,6 +304,8 @@ class BipedBasicEnv(PipelineEnv):
         left_in_contact  = jnp.where(l_touch > contact_eps, 1.0, 0.0)
         right_in_contact = jnp.where(r_touch > contact_eps, 1.0, 0.0)
         foot_contacts = jnp.array([left_in_contact, right_in_contact]) # shape (2,)
+
+        # TODO: investigate which observations actually help
 
         # compute the observation
         obs = jnp.concatenate([position,       # base pos + joint pos
