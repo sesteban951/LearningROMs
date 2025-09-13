@@ -112,7 +112,7 @@ if __name__ == "__main__":
     # env = envs.get_environment("biped")
     env = envs.get_environment("biped_basic")
     ppo_config = dict(
-        num_timesteps=15_000_000,      # total training timesteps
+        num_timesteps=25_000_000,      # total training timesteps
         num_evals=10,                  # number of evaluations
         reward_scaling=1.0,            # reward scale
         episode_length=1500,            # max episode length

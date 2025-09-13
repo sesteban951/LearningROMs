@@ -1,5 +1,4 @@
 # jax imports
-from xml.parsers.expat import model
 import jax
 import jax.numpy as jnp
 from brax.envs.base import PipelineEnv, State
@@ -23,14 +22,16 @@ class BipedBasicConfig:
     physics_steps_per_control_step: int = 10
 
     # Reward function coefficients
-    reward_com_height: float = 1.0  # center of mass height target
-    reward_forward: float = 1.0      # forward velocity target
+    reward_com_height: float = 2.0  # center of mass height target
+    reward_orientation: float = 0.1   # torso orientation target
+    reward_forward: float = 1.5      # forward velocity target
     reward_control: float = 1e-4     # control cost
     reward_alive: float = 1.0        # alive reward bonus (if not terminated)
 
     # desired values
-    com_des: float = 0.75  # desired center of mass height
-    vel_des: float = 0.5  # desired forward velocity
+    com_des: float = 0.75    # desired center of mass height
+    vel_des: float = 1.0     # desired forward velocity
+    theta_des: float = -0.1  # desired torso lean angle
 
     # termination conditions
     min_com_height: float = 0.5      # terminate if falls below this height
@@ -40,18 +41,16 @@ class BipedBasicConfig:
     # Ranges for sampling initial conditions
     lb_base_theta_pos: float = -jnp.pi / 3.0  # base theta pos limits
     ub_base_theta_pos: float =  jnp.pi / 3.0
-    lb_base_cart_vel: float = -0.1     # base cart vel limits
-    ub_base_cart_vel: float =  0.1
-    lb_base_theta_vel: float = -0.1    # base theta vel limits
-    ub_base_theta_vel: float =  0.1
-    lb_base_angular_vel: float = -0.1   # base angular vel limits
-    ub_base_angular_vel: float =  0.1
+    lb_base_cart_vel: float = -1.0     # base cart vel limits
+    ub_base_cart_vel: float =  1.0
+    lb_base_theta_vel: float = -1.0    # base theta vel limits
+    ub_base_theta_vel: float =  1.0
     lb_hip_joint_pos: float =  (-jnp.pi / 2.0) * 0.8  # hip joint pos limits
     ub_hip_joint_pos: float =  ( jnp.pi / 2.0) * 0.8
     lb_knee_joint_pos: float = (-2.4) * 0.8    # knee joint pos limits
     ub_knee_joint_pos: float =  0.0
-    lb_joint_vel: float = -0.1         # joint vel limits
-    ub_joint_vel: float =  0.1
+    lb_joint_vel: float = -1.0         # joint vel limits
+    ub_joint_vel: float =  1.0
 
 # environment class
 class BipedBasicEnv(PipelineEnv):
@@ -59,7 +58,7 @@ class BipedBasicEnv(PipelineEnv):
     Environment for training a planar biped walking task.
     Close to: https://gymnasium.farama.org/environments/mujoco/walker2d/
 
-    States: x = (base_pos, base_theta, join_pos, base_vel, base_theta_dot, joint_vel), shape=(14,)
+    States: x = (base_pos, base_theta, joint_pos, base_vel, base_theta_dot, joint_vel), shape=(14,)
     Actions: a = (hip_left, knee_left, hip_right, knee_right), the torques applied to the joints, shape=(4,)
     """
 
@@ -156,8 +155,8 @@ class BipedBasicEnv(PipelineEnv):
         data = self.pipeline_init(qpos, qvel)
 
         # reset the observation
-        action  = jnp.zeros(self.action_size)  # assume zero initial action
-        obs = self._compute_obs(data, action)
+        # action  = jnp.zeros(self.action_size)  # assume zero initial action
+        obs = self._compute_obs(data)
 
         # reset reward
         reward, done = jnp.zeros(2)
@@ -165,6 +164,7 @@ class BipedBasicEnv(PipelineEnv):
         # reset the metrics
         metrics = {"reward_com_height": 0.0,
                    "reward_forward": 0.0,
+                   "reward_orientation": 0.0,
                    "reward_control": 0.0,
                    "reward_alive": 0.0
                    }
@@ -197,22 +197,32 @@ class BipedBasicEnv(PipelineEnv):
         data  = self.pipeline_step(data0, action)
 
         # update the observations
-        obs = self._compute_obs(data, action)
+        obs = self._compute_obs(data)
 
         # extract data
-        com_pos0 = self._compute_com(data0)
-        com_pos  = self._compute_com(data)
+        com_pos0 = data0.subtree_com[1]
+        com_pos  = data.subtree_com[1]
         com_vel = (com_pos[0] - com_pos0[0]) / self.dt
         base_theta = data.qpos[2]
+        cos_theta = jnp.cos(base_theta)
+        sin_theta = jnp.sin(base_theta)
+
+        # special angle error
+        cos_theta_des = jnp.cos(self.config.theta_des)
+        sin_theta_des = jnp.sin(self.config.theta_des)
+        base_theta_vec = jnp.array([cos_theta - cos_theta_des,
+                                    sin_theta - sin_theta_des])
 
         # compute errors
         com_pos_err  = jnp.abs(com_pos[2] - self.config.com_des)
         com_vel_err = jnp.square(com_vel - self.config.vel_des)
-        tau_err = jnp.square(action).sum()
+        base_theta_err = jnp.square(base_theta_vec).sum()
+        tau_err = jnp.square(data.ctrl).sum()
 
         # compute the reward terms
         reward_com_height = -self.config.reward_com_height * com_pos_err
         reward_forward = -self.config.reward_forward * com_vel_err
+        reward_orientation = -self.config.reward_orientation * base_theta_err
         reward_control = -self.config.reward_control * tau_err
 
         # termination conditions
@@ -229,11 +239,13 @@ class BipedBasicEnv(PipelineEnv):
         reward_alive = self.config.reward_alive * (1.0 - done)
 
         # compute the total reward
-        reward = (reward_com_height + reward_forward + reward_control + reward_alive)
+        reward = (reward_com_height + reward_forward + reward_orientation +
+                  reward_control + reward_alive)
 
         # update the metrics and info dictionaries
         state.metrics["reward_com_height"] = reward_com_height
         state.metrics["reward_forward"] = reward_forward
+        state.metrics["reward_orientation"] = reward_orientation
         state.metrics["reward_control"] = reward_control
         state.metrics["reward_alive"] = reward_alive
         state.info["step"] += 1
@@ -244,30 +256,37 @@ class BipedBasicEnv(PipelineEnv):
                              done=done)
 
     # internal function to compute the observation
-    def _compute_obs(self, data, action):
+    def _compute_obs(self, data):
         """
         Compute the observation from the physics state.
 
         Args:
             data: brax.physics.base.State object
                   The physics state of the environment.
-            action: jax.Array
-                    The action to be applied to the environment.
+        Returns:
+            obs: jax.Array
+                 The observation of the environment.
         """
 
-        # base height
+        # positions
         base_height = data.qpos[1]
         base_cos_theta = jnp.cos(data.qpos[2])
         base_sin_theta = jnp.sin(data.qpos[2])
-        base_pos = jnp.array([base_height, base_cos_theta, base_sin_theta])
-
-        # joint state
-        joint_pos = data.qpos[3:]
+        base_pos = jnp.array([base_height, base_cos_theta, base_sin_theta]) # shape (3,)
+        joint_pos = data.qpos[3:]                                           # shape (4,)
+        position = jnp.concatenate([base_pos, joint_pos])                   # shape (7,)
 
         # full velocity state
-        qvel = data.qvel
+        velocity = data.qvel   # shape (7,)
 
-        # --- foot contact flags from sensors ---
+        # com inertia and velocity (skip the first entry which is the world)
+        cinert = data.cinert[1:].ravel()  # shape (nbody x 10)
+        cvel = data.cvel[1:].ravel()      # shape (nbody x 6)
+
+        # generalized forces on the full system 
+        qfrc = data.qfrc_actuator  # shape (nv x 1)
+
+        # contact at the foot
         sd = data.sensordata  # mjx exposes sensordata
         l_touch = sd[self.left_adr : self.left_adr + self.left_dim][0]
         r_touch = sd[self.right_adr: self.right_adr + self.right_dim][0]
@@ -276,60 +295,24 @@ class BipedBasicEnv(PipelineEnv):
         contact_eps = 1e-3
         left_in_contact  = jnp.where(l_touch > contact_eps, 1.0, 0.0)
         right_in_contact = jnp.where(r_touch > contact_eps, 1.0, 0.0)
-        foot_contacts = jnp.array([left_in_contact, right_in_contact])
+        foot_contacts = jnp.array([left_in_contact, right_in_contact]) # shape (2,)
 
         # compute the observation
-        obs = jnp.concatenate([base_pos,       # height, cos(theta), sin(theta)
-                               joint_pos,      # joint positions
-                               qvel,           # full velocity state
-                               foot_contacts,  # foot contact flags    
-                               action])        # previous action
+        obs = jnp.concatenate([position,       # base pos + joint pos
+                               velocity,       # full gen velocity
+                            #    cinert,         # com inertia
+                            #    cvel,           # com velocity
+                            #    qfrc,           # generalized forces
+                               foot_contacts]) # foot contact flags
 
         return obs
-    
-    # method to compute the center of mass of the robot
-    def _compute_com(self, data):
-        """
-        Compute the center of mass of the model in world frame.
-
-        Args:
-            data: brax.physics.base.State object
-                  The physics state of the environment.
-        Returns:
-            com: jax.Array
-                 The (x, y, z) position of the center of mass of the model.
-        """
-
-        # compute the inertia
-        inertia = self.sys.link.inertia
-        
-        # If you ever switch to 'spring' or 'positional' backends, keep this block.
-        if self.backend in ('spring', 'positional'):
-
-            # Reweight mass/inertia to match spring settings
-            i_diag = jax.vmap(jnp.diagonal)(inertia.i)
-            i_scaled = jax.vmap(jnp.diag)(i_diag ** (1.0 - self.sys.spring_inertia_scale))
-            inertia = inertia.replace(
-                i=i_scaled,
-                mass=inertia.mass ** (1.0 - self.sys.spring_mass_scale),
-            )
-
-        # total mass
-        mass_sum = jnp.sum(inertia.mass)
-    
-        # Transform each link pose to its COM pose
-        x_i = data.x.vmap().do(inertia.transform)
-
-        # compute the com
-        com = jnp.sum(jax.vmap(jnp.multiply)(inertia.mass[:, None], x_i.pos), axis=0) / mass_sum
-
-        return com
 
 
     @property
     def observation_size(self):
         """Returns the size of the observation space."""
-        return 20
+        # return 103
+        return 16
 
     @property
     def action_size(self):
