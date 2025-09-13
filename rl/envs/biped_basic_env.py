@@ -24,6 +24,7 @@ class BipedBasicConfig:
     # Reward function coefficients
     reward_com_height: float = 2.0  # center of mass height target
     reward_orientation: float = 0.1   # torso orientation target
+    # reward_joint_pos: 
     reward_forward: float = 1.5      # forward velocity target
     reward_control: float = 1e-4     # control cost
     reward_alive: float = 1.0        # alive reward bonus (if not terminated)
@@ -82,6 +83,7 @@ class BipedBasicEnv(PipelineEnv):
         key_name = "standing"
         key_id = mujoco.mj_name2id(mj_model, mujoco.mjtObj.mjOBJ_KEY, key_name)
         self.qpos_stand = jnp.array(mj_model.key_qpos[key_id])
+        self.q_joints_stand = self.qpos_stand[2:]  # joint positions only
 
         # foot touch sensors
         left_foot_touch_snesor_name = "left_foot_touch"
@@ -279,12 +281,12 @@ class BipedBasicEnv(PipelineEnv):
         # full velocity state
         velocity = data.qvel   # shape (7,)
 
-        # com inertia and velocity (skip the first entry which is the world)
-        cinert = data.cinert[1:].ravel()  # shape (nbody x 10)
-        cvel = data.cvel[1:].ravel()      # shape (nbody x 6)
+        # # com inertia and velocity (skip the first entry which is the world)
+        # cinert = data.cinert[1:].ravel()  # shape (nbody x 10)
+        # cvel = data.cvel[1:].ravel()      # shape (nbody x 6)
 
-        # generalized forces on the full system 
-        qfrc = data.qfrc_actuator  # shape (nv x 1)
+        # # generalized forces on the full system 
+        # qfrc = data.qfrc_actuator  # shape (nv x 1)
 
         # contact at the foot
         sd = data.sensordata  # mjx exposes sensordata
