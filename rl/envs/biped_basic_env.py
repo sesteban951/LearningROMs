@@ -25,9 +25,17 @@ class BipedBasicConfig:
     reward_com_height: float = 2.0   # center of mass height target
     reward_orientation: float = 0.5  # torso orientation target
     reward_joint_pos: float = 0.05    # joint position target
+    # reward_joint_vel: float = 0.01    # joint position target
     reward_forward: float = 2.0      # forward velocity target
     reward_control: float = 1e-4     # control cost
     reward_alive: float = 1.0        # alive reward bonus (if not terminated)
+
+    # TODO: rewrads to add:
+    # - foot slip (lateral and longitudinal)
+    # - foot alternating via phase
+    # - should I go back to base height?
+    # - no slip on stance foot. Use complementary constraint-like reward
+
 
     # desired values
     com_des: float = 0.8    # desired center of mass height
@@ -168,6 +176,7 @@ class BipedBasicEnv(PipelineEnv):
                    "reward_forward": 0.0,
                    "reward_orientation": 0.0,
                    "reward_joint_pos": 0.0,
+                #    "reward_joint_vel": 0.0,
                    "reward_control": 0.0,
                    "reward_alive": 0.0
                    }
@@ -210,6 +219,7 @@ class BipedBasicEnv(PipelineEnv):
         cos_theta = jnp.cos(base_theta)
         sin_theta = jnp.sin(base_theta)
         joint_pos = data.qpos[3:]
+        # joint_vel = data.qvel[3:]
 
         # special angle error
         cos_theta_des = jnp.cos(self.config.theta_des)
@@ -222,6 +232,7 @@ class BipedBasicEnv(PipelineEnv):
         com_vel_err = jnp.square(com_vel - self.config.vel_des)
         base_theta_err = jnp.square(base_theta_vec).sum()
         joint_pos_err = jnp.square(joint_pos - self.q_joints_stand).sum()
+        # joint_vel_err = jnp.square(joint_vel).sum()
         tau_err = jnp.square(data.ctrl).sum()
 
         # compute the reward terms
@@ -229,6 +240,7 @@ class BipedBasicEnv(PipelineEnv):
         reward_forward = -self.config.reward_forward * com_vel_err
         reward_orientation = -self.config.reward_orientation * base_theta_err
         reward_joint_pos = -self.config.reward_joint_pos * joint_pos_err
+        # reward_joint_vel = -self.config.reward_joint_vel * joint_vel_err
         reward_control = -self.config.reward_control * tau_err
 
         # termination conditions
@@ -245,15 +257,17 @@ class BipedBasicEnv(PipelineEnv):
         reward_alive = self.config.reward_alive * (1.0 - done)
 
         # compute the total reward
-        reward = (reward_com_height + reward_forward + reward_orientation +
-                  reward_joint_pos +
-                  reward_control + reward_alive)
+        reward = (reward_com_height + reward_forward   + reward_orientation +
+                  reward_joint_pos  + 
+                #   reward_joint_vel +
+                  reward_control    + reward_alive)
 
         # update the metrics and info dictionaries
         state.metrics["reward_com_height"] = reward_com_height
         state.metrics["reward_forward"] = reward_forward
         state.metrics["reward_orientation"] = reward_orientation
         state.metrics["reward_joint_pos"] = reward_joint_pos
+        # state.metrics["reward_joint_vel"] = reward_joint_vel
         state.metrics["reward_control"] = reward_control
         state.metrics["reward_alive"] = reward_alive
         state.info["step"] += 1
@@ -291,8 +305,10 @@ class BipedBasicEnv(PipelineEnv):
         # cinert = data.cinert[1:].ravel()  # shape (nbody x 10)
         # cvel = data.cvel[1:].ravel()      # shape (nbody x 6)
 
-        # # generalized forces on the full system 
+        # generalized forces on the full system 
         # qfrc = data.qfrc_actuator  # shape (nv x 1)
+
+        # TODO: add a phase variable? Should help with feet alternation
 
         # contact at the foot
         sd = data.sensordata  # mjx exposes sensordata

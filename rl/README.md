@@ -53,6 +53,7 @@ The number of transition samples used per PPO update (before splitting into mini
 Important relationship: In Brax PPO, the data collected per update is typically
 ```python
 samples_per_update ≈ num_envs * unroll_length
+batch_size * num_minibatches % num_envs == 0
 ```
 and you usually set
 ```python

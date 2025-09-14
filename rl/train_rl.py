@@ -125,26 +125,11 @@ if __name__ == "__main__":
         clipping_epsilon=0.2,          # PPO clipping epsilon
         entropy_cost=1e-4,             # entropy bonus
         num_envs=2048,                 # parallel envs
-        batch_size=2048,             # batch size
+        batch_size=2049,             # batch size
         seed=0,                        # RNG seed
     )
-    # ppo_config = dict(
-    #     num_timesteps=15_000_000,
-    #     num_evals=13,                 # ~15.7M printed steps with settings below
-    #     reward_scaling=0.1,
-    #     episode_length=1500,
-    #     normalize_observations=True,
-    #     unroll_length=10,
-    #     num_minibatches=64,
-    #     num_updates_per_batch=12,     # a touch lower for stability
-    #     discounting=0.97,
-    #     learning_rate=5e-4,
-    #     clipping_epsilon=0.2,
-    #     entropy_cost=3e-4,            # anneal to 1e-4 later
-    #     num_envs=2048,
-    #     batch_size=20480,             # use all collected data
-    #     seed=0,
-    # )
+
+    # TODO: need to add neural network wrapper for general RL.
 
     #----------------------- TRAIN -----------------------#
 
