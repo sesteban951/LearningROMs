@@ -48,8 +48,6 @@ if __name__ == "__main__":
     model_path = config.model_path
     mj_model = mujoco.MjModel.from_xml_path(model_path)
     mj_data = mujoco.MjData(mj_model)
-    mjx_model = mjx.put_model(mj_model)
-    mjx_data = mjx.put_data(mj_model, mj_data)
 
     # sample initial states
     key_name = "default"
@@ -57,12 +55,9 @@ if __name__ == "__main__":
     q0 = mj_model.key_qpos[key_id]
     v0 = mj_model.key_qvel[key_id]
 
-    print("Initial q0:", q0)
-    print("Initial v0:", v0)
-
     # simulation parameters
-    sim_dt = mj_model.opt.timestep                          # sim timestep
-    control_dt = env.config.physics_steps_per_control_step  # sim steps per control update 
+    sim_dt = mj_model.opt.timestep                                  # sim timestep
+    control_decimation = env.config.physics_steps_per_control_step  # sim steps per control update
 
     # simulation parameters
     batch_size = 8
@@ -70,11 +65,25 @@ if __name__ == "__main__":
     num_sim_steps = round(t_max / sim_dt)
 
     # Create multiple copies of q0 and v0 for parallel simulation
-    q0_batch = np.tile(q0, (batch_size, 1))  # shpae (batch_size, nq)
+    q0_batch = np.tile(q0, (batch_size, 1))  # shape (batch_size, nq)
     v0_batch = np.tile(v0, (batch_size, 1))  # shape (batch_size, nv)
+    q0_batch = jnp.array(q0_batch)           # shape (batch_size, nq)
+    v0_batch = jnp.array(v0_batch)           # shape (batch_size, nv)
 
-    # create the policy and observation function here
-    ppo_player = PPO_Play(env, params_path)
-    policy_fn, obs_fn = ppo_player.policy_and_obs_functions()
+    # allocate solution arrays
+    q_traj = np.zeros((batch_size, num_sim_steps, mj_model.nq)) # (batch, time_size, nq)
+    v_traj = np.zeros((batch_size, num_sim_steps, mj_model.nv)) # (batch, time_size, nv)
+    u_traj = np.zeros((batch_size, num_sim_steps, mj_model.nu)) # (batch, time_size, nu)
 
-    # start the simulation loop here
+    # convert mujoco model and data to jax
+    mjx_model = mjx.put_model(mj_model)
+    mjx_data = mjx.put_data(mj_model, mj_data)
+
+    # # create the policy and observation function here
+    # ppo_player = PPO_Play(env, params_path)
+    # policy_fn, obs_fn = ppo_player.policy_and_obs_functions()
+
+
+    # # main loop
+    # mjx_data = mjx.make_data(mjx_model, q0_batch, v0_batch)
+
