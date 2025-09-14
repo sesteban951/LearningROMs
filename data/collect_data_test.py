@@ -10,7 +10,9 @@ import numpy as np
 import time
 
 # jax imports
+import jax
 import jax.numpy as jnp
+from jax import lax
 
 # brax imports
 from brax import envs
@@ -34,12 +36,19 @@ from rl.algorithms.ppo_play import PPO_Play
 
 #################################################################
 
+
+#################################################################
+
 if __name__ == "__main__":
 
 
     # load in the enviorment and policy parameters
     env = envs.get_environment("paddle_ball")
     params_path = "./rl/policy/paddle_ball_policy.pkl"
+
+    # # create the policy and observation function here
+    # ppo_player = PPO_Play(env, params_path)
+    # policy_fn, obs_fn = ppo_player.policy_and_obs_functions()
 
     # get the enviornment config
     config = env.config
@@ -49,41 +58,105 @@ if __name__ == "__main__":
     mj_model = mujoco.MjModel.from_xml_path(model_path)
     mj_data = mujoco.MjData(mj_model)
 
-    # sample initial states
-    key_name = "default"
-    key_id = mujoco.mj_name2id(mj_model, mujoco.mjtObj.mjOBJ_KEY, key_name)
-    q0 = mj_model.key_qpos[key_id]
-    v0 = mj_model.key_qvel[key_id]
+    # convert mujoco model and data to jax
+    mjx_model = mjx.put_model(mj_model)
+    mjx_data = mjx.put_data(mj_model, mj_data)
 
     # simulation parameters
     sim_dt = mj_model.opt.timestep                                  # sim timestep
     control_decimation = env.config.physics_steps_per_control_step  # sim steps per control update
 
     # simulation parameters
-    batch_size = 8
+    batch_size = 2048
     t_max = 5.0
     num_sim_steps = round(t_max / sim_dt)
 
-    # Create multiple copies of q0 and v0 for parallel simulation
-    q0_batch = np.tile(q0, (batch_size, 1))  # shape (batch_size, nq)
-    v0_batch = np.tile(v0, (batch_size, 1))  # shape (batch_size, nv)
-    q0_batch = jnp.array(q0_batch)           # shape (batch_size, nq)
-    v0_batch = jnp.array(v0_batch)           # shape (batch_size, nv)
+    print(f"sim_dt: {sim_dt}, control_decimation: {control_decimation}, num_sim_steps: {num_sim_steps}")
+
+    # sample initial states
+    key_name = "default"
+    key_id = mujoco.mj_name2id(mj_model, mujoco.mjtObj.mjOBJ_KEY, key_name)
+    q0 = mj_model.key_qpos[key_id]
+    v0 = mj_model.key_qvel[key_id]
+
+    # set some intial state bounds
+    q_lb = jnp.array([-0.25, -0.25]) + q0
+    q_ub = jnp.array([ 0.25,  0.25]) + q0
+    v_lb = jnp.array([-0.1, -0.1]) + v0
+    v_ub = jnp.array([ 0.1,  0.1]) + v0
+
+    # sample initial states
+    key = jax.random.PRNGKey(0)
+    key1, key2 = jax.random.split(key, 2)
+    q0_batch = jax.random.uniform(key1, (batch_size, mjx_model.nq), minval=q_lb, maxval=q_ub) # shape (batch, nq)
+    v0_batch = jax.random.uniform(key2, (batch_size, mjx_model.nv), minval=v_lb, maxval=v_ub) # shape (batch, nv)
 
     # allocate solution arrays
-    q_traj = np.zeros((batch_size, num_sim_steps, mj_model.nq)) # (batch, time_size, nq)
-    v_traj = np.zeros((batch_size, num_sim_steps, mj_model.nv)) # (batch, time_size, nv)
-    u_traj = np.zeros((batch_size, num_sim_steps, mj_model.nu)) # (batch, time_size, nu)
+    q_traj = jnp.zeros((batch_size, num_sim_steps, mjx_model.nq)) # (batch, time_size, nq)
+    v_traj = jnp.zeros((batch_size, num_sim_steps, mjx_model.nv)) # (batch, time_size, nv)
+    u_traj = jnp.zeros((batch_size, num_sim_steps, mjx_model.nu)) # (batch, time_size, nu)
 
-    # convert mujoco model and data to jax
-    mjx_model = mjx.put_model(mj_model)
-    mjx_data = mjx.put_data(mj_model, mj_data)
+    # create batched mj data, and set the initial states for each data instance
+    mjx_data_batched = jax.vmap(lambda i: mjx_data.replace(qpos=q0_batch[i], qvel=v0_batch[i]))(jnp.arange(batch_size))
 
-    # # create the policy and observation function here
-    # ppo_player = PPO_Play(env, params_path)
-    # policy_fn, obs_fn = ppo_player.policy_and_obs_functions()
+    # create batched step function, performs a single mujoco step
+    step_fn = jax.jit(jax.vmap(lambda data: mjx.step(mjx_model, data), in_axes=(0)))
 
+    # for now we will apply a constant 0 control
+    u_zero = jnp.zeros((batch_size, mjx_model.nu)) # (batch, nu)
 
-    # # main loop
-    # mjx_data = mjx.make_data(mjx_model, q0_batch, v0_batch)
+    # set the model dimensions
+    nq = mjx_model.nq
+    nv = mjx_model.nv
+    nu = mjx_model.nu
 
+    def rollout(data_b, T):
+
+        # prealloc logs on device
+        q_log = jnp.empty((batch_size, T, nq), dtype=jnp.float32)
+        v_log = jnp.empty((batch_size, T, nv), dtype=jnp.float32)
+        u_log = jnp.empty((batch_size, T, nu), dtype=jnp.float32)
+
+        def body(t, carry):
+            data, ql, vl, ul = carry
+            # set ctrl once per step (cheap, but avoid host involvement)
+            data = data.replace(ctrl=u_zero)
+            data = step_fn(data)                # step all envs
+            ql = ql.at[:, t, :].set(data.qpos)       # log q
+            vl = vl.at[:, t, :].set(data.qvel)       # log v
+            ul = ul.at[:, t, :].set(u_zero)          # log u (constant)
+            return (data, ql, vl, ul)
+
+        data_b, q_log, v_log, u_log = lax.fori_loop(
+            0, T, body, (data_b, q_log, v_log, u_log)
+        )
+        return data_b, q_log, v_log, u_log
+
+    # JIT the whole rollout (T is static for best compile; donate big args to reduce copies)
+    fast_rollout = jax.jit(rollout, static_argnames=("T",))
+
+    # Run once to compile, then it’s fast
+    t0 = time.time()
+    data_b, q_traj, v_traj, u_traj = fast_rollout(mjx_data_batched, num_sim_steps)
+    jax.block_until_ready(q_traj)
+    print(f"[first run incl. compile] {(time.time()-t0):.3f}s")
+
+    t0 = time.time()
+    data_b, q_traj, v_traj, u_traj = fast_rollout(mjx_data_batched, num_sim_steps)
+    jax.block_until_ready(q_traj)
+    print(f"[steady-state] {(time.time()-t0):.3f}s")
+
+    t0 = time.time()
+    data_b, q_traj, v_traj, u_traj = fast_rollout(mjx_data_batched, num_sim_steps)
+    jax.block_until_ready(q_traj)
+    print(f"[steady-state] {(time.time()-t0):.3f}s")
+
+    t0 = time.time()
+    data_b, q_traj, v_traj, u_traj = fast_rollout(mjx_data_batched, num_sim_steps)
+    jax.block_until_ready(q_traj)
+    print(f"[steady-state] {(time.time()-t0):.3f}s")
+
+    t0 = time.time()
+    data_b, q_traj, v_traj, u_traj = fast_rollout(mjx_data_batched, num_sim_steps)
+    jax.block_until_ready(q_traj)
+    print(f"[steady-state] {(time.time()-t0):.3f}s")
