@@ -69,7 +69,6 @@ if __name__ == "__main__":
 
     print(f"sim_dt: {sim_dt}, control_decimation: {control_decimation}, num_sim_steps: {num_sim_steps}")
 
-
     # set some intial state bounds
     q_lb = jnp.array([-0.1, 1.0])
     q_ub = jnp.array([ 0.9, 3.0])
@@ -124,7 +123,7 @@ if __name__ == "__main__":
             # unpack carry
             data, ql, vl, ul = carry
 
-            # set ctrl once per step (cheap, but avoid host involvement)
+            # apply control and step
             data = data.replace(ctrl=u_zero)
             data = step_fn_batched(data)             # step all envs
 
@@ -149,21 +148,44 @@ if __name__ == "__main__":
         """
 
         # prealloc logs on device
-        q_log = jnp.empty((batch_size, T, nq), dtype=jnp.float32)
-        v_log = jnp.empty((batch_size, T, nv), dtype=jnp.float32)
-        u_log = jnp.empty((batch_size, T, nu), dtype=jnp.float32)
+        q_log = jnp.empty((batch_size, T, nq), dtype=jnp.float32) # (batch, time, nq)
+        v_log = jnp.empty((batch_size, T, nv), dtype=jnp.float32) # (batch, time, nv)
+        u_log = jnp.empty((batch_size, T, nu), dtype=jnp.float32) # (batch, time, nu)
 
         # sample control sequence
         key, subkey = jax.random.split(rng)
 
         # sample random control inputs
-        u_lb = -jnp.ones((nu,))  # upper bound is 1.0 vector
-        u_ub =  jnp.ones((nu,))  # lower bound is -1.0 vector
+        u_lb = -jnp.ones((nu,))     # upper bound is  1.0 vector, shape (nu,)
+        u_ub =  jnp.ones((nu,))     # lower bound is -1.0 vector, shape (nu,)
+        u_seq = jax.random.uniform(subkey, (batch_size, T, nu), minval=u_lb, maxval=u_ub) # shape (batch, time, nu)
 
-        u_seq = jax.random.uniform(subkey, (T, batch_size, nu), minval=u_lb, maxval=u_ub) # shape (T, batch, nu)
+        def body(t, carry):
 
+            # unpack the carry
+            data, ql, vl, ul = carry
+
+            # get the current control
+            u_t = u_seq[:, t, :]          # shape (batch, nu)
+
+            # apply the control and step
+            data = data.replace(ctrl=u_t)
+            data = step_fn_batched(data)   
+
+            # log states
+            ql = ql.at[:, t, :].set(data.qpos)   # log q
+            vl = vl.at[:, t, :].set(data.qvel)   # log v
+            ul = ul.at[:, t, :].set(u_t)         # log u
+
+            return (data, ql, vl, ul)
         
-    
+        # loop over time steps
+        data_b, q_log, v_log, u_log = lax.fori_loop(0, T, 
+                                                    body, 
+                                                    (data_b, q_log, v_log, u_log))
+        
+        return data_b, q_log, v_log, u_log
+
     # rollout with policy
     def rollout_with_policy(data_b, T):
         """
@@ -214,28 +236,36 @@ if __name__ == "__main__":
         return data_b, q_log, v_log, u_log
 
 
+    seed = int(time.time())
+    rng = jax.random.PRNGKey(seed)
+
     # JIT the whole rollout (T is static for best compile; donate big args to reduce copies)
     # fast_rollout = jax.jit(rollout_zero, static_argnames=("T",))
-    fast_rollout = jax.jit(rollout_with_policy, static_argnames=("T",))
+    # fast_rollout = jax.jit(rollout_with_policy, static_argnames=("T",))
+    fast_rollout_rand = jax.jit(rollout_random, static_argnames=("T",))
 
     # Run once to compile, then it’s fast
     t0 = time.time()
-    data_b, q_traj, v_traj, u_traj = fast_rollout(mjx_data_batched, num_sim_steps)
+    # data_b, q_traj, v_traj, u_traj = fast_rollout(mjx_data_batched, num_sim_steps)
+    data_b, q_traj, v_traj, u_traj = fast_rollout_rand(mjx_data_batched, num_sim_steps, rng)
     jax.block_until_ready(q_traj)
     print(f"[first run incl. compile] {(time.time()-t0):.3f}s")
 
     t0 = time.time()
-    data_b, q_traj, v_traj, u_traj = fast_rollout(mjx_data_batched, num_sim_steps)
+    # data_b, q_traj, v_traj, u_traj = fast_rollout(mjx_data_batched, num_sim_steps)
+    data_b, q_traj, v_traj, u_traj = fast_rollout_rand(mjx_data_batched, num_sim_steps, rng)
     jax.block_until_ready(q_traj)
     print(f"[steady-state] {(time.time()-t0):.3f}s")
 
     t0 = time.time()
-    data_b, q_traj, v_traj, u_traj = fast_rollout(mjx_data_batched, num_sim_steps)
+    # data_b, q_traj, v_traj, u_traj = fast_rollout(mjx_data_batched, num_sim_steps)
+    data_b, q_traj, v_traj, u_traj = fast_rollout_rand(mjx_data_batched, num_sim_steps, rng)
     jax.block_until_ready(q_traj)
     print(f"[steady-state] {(time.time()-t0):.3f}s")
 
     t0 = time.time()
-    data_b, q_traj, v_traj, u_traj = fast_rollout(mjx_data_batched, num_sim_steps)
+    # data_b, q_traj, v_traj, u_traj = fast_rollout(mjx_data_batched, num_sim_steps)
+    data_b, q_traj, v_traj, u_traj = fast_rollout_rand(mjx_data_batched, num_sim_steps, rng)
     jax.block_until_ready(q_traj)
     print(f"[steady-state] {(time.time()-t0):.3f}s")
 
@@ -251,5 +281,4 @@ if __name__ == "__main__":
     # save the data
     save_path = "./data/paddle_ball_data.npz"
     np.savez(save_path, q_traj=q_traj, v_traj=v_traj, u_traj=u_traj)
-    print(f"data saved to: {save_path}")
-
+    print(f"Saved data to: {save_path}")
