@@ -20,7 +20,6 @@ from brax import envs
 # mujoco imports
 import mujoco
 import mujoco.mjx as mjx
-import mujoco.viewer
 
 # change directories to project root (so `from rl...` works even if run from /data)
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -36,22 +35,19 @@ from rl.algorithms.ppo_play import PPO_Play
 
 #################################################################
 
-
-#################################################################
-
 if __name__ == "__main__":
-
 
     # load in the enviorment and policy parameters
     env = envs.get_environment("paddle_ball")
     params_path = "./rl/policy/paddle_ball_policy.pkl"
 
-    # # create the policy and observation function here
-    # ppo_player = PPO_Play(env, params_path)
-    # policy_fn, obs_fn = ppo_player.policy_and_obs_functions()
+    # create the policy and observation function here
+    ppo_player = PPO_Play(env, params_path)
+    policy_fn, obs_fn = ppo_player.policy_and_obs_functions()
 
     # get the enviornment config
     config = env.config
+    ctrl_step = config.physics_steps_per_control_step
 
     # import the mujoco model
     model_path = config.model_path
@@ -98,17 +94,25 @@ if __name__ == "__main__":
     mjx_data_batched = jax.vmap(lambda i: mjx_data.replace(qpos=q0_batch[i], qvel=v0_batch[i]))(jnp.arange(batch_size))
 
     # create batched step function, performs a single mujoco step
-    step_fn = jax.jit(jax.vmap(lambda data: mjx.step(mjx_model, data), in_axes=(0)))
+    step_fn_batched = jax.jit(jax.vmap(lambda data: mjx.step(mjx_model, data), in_axes=(0))) 
 
-    # for now we will apply a constant 0 control
-    u_zero = jnp.zeros((batch_size, mjx_model.nu)) # (batch, nu)
+    # create batched observation function
+    obs_fn_batched = jax.vmap(obs_fn, in_axes=0) 
+
+    # create policy function
+    policy_fn_batched = jax.vmap(policy_fn, in_axes=0)
 
     # set the model dimensions
     nq = mjx_model.nq
     nv = mjx_model.nv
     nu = mjx_model.nu
 
-    def rollout(data_b, T):
+    # zero input rollout
+    u_zero = jnp.zeros((batch_size, mjx_model.nu)) # (batch, nu)
+    def rollout_zero(data_b, T):
+        """
+        rollout with zero input
+        """
 
         # prealloc logs on device
         q_log = jnp.empty((batch_size, T, nq), dtype=jnp.float32)
@@ -116,22 +120,81 @@ if __name__ == "__main__":
         u_log = jnp.empty((batch_size, T, nu), dtype=jnp.float32)
 
         def body(t, carry):
+
+            # unpack carry
             data, ql, vl, ul = carry
+
             # set ctrl once per step (cheap, but avoid host involvement)
             data = data.replace(ctrl=u_zero)
-            data = step_fn(data)                # step all envs
+            data = step_fn_batched(data)             # step all envs
+
+            # log states
             ql = ql.at[:, t, :].set(data.qpos)       # log q
             vl = vl.at[:, t, :].set(data.qvel)       # log v
             ul = ul.at[:, t, :].set(u_zero)          # log u (constant)
+
             return (data, ql, vl, ul)
 
-        data_b, q_log, v_log, u_log = lax.fori_loop(
-            0, T, body, (data_b, q_log, v_log, u_log)
-        )
+        # loop over time steps
+        data_b, q_log, v_log, u_log = lax.fori_loop(0, T, 
+                                                    body, 
+                                                    (data_b, q_log, v_log, u_log))
+        
+        return data_b, q_log, v_log, u_log
+    
+    # rollout with policy
+    def rollout_with_policy(data_b, T):
+        """
+        rollout with policy
+        """
+
+        # prealloc logs on device
+        q_log = jnp.empty((batch_size, T, nq), dtype=jnp.float32)
+        v_log = jnp.empty((batch_size, T, nv), dtype=jnp.float32)
+        u_log = jnp.empty((batch_size, T, nu), dtype=jnp.float32)
+
+        # initialize input vector
+        u_curr = jnp.zeros((batch_size, nu))
+
+        def body(t, carry):
+            
+            # unpack carry
+            data, u_c, ql, vl, ul = carry
+
+            # compute control only on decimated steps
+            def compute_control(_):
+
+                obs = obs_fn_batched(data)           # get observations
+                act = policy_fn_batched(obs)           # get action
+                return act
+            
+            # if statement to update control at desired rate
+            u_next = lax.cond((t % control_decimation) == 0, 
+                              compute_control, 
+                              lambda _: u_curr, operand=None)
+            
+            # apply control and step
+            data = data.replace(ctrl=u_next)
+            data = step_fn_batched(data)             
+
+            # log states
+            ql = ql.at[:, t, :].set(data.qpos)       # log q
+            vl = vl.at[:, t, :].set(data.qvel)       # log v
+            ul = ul.at[:, t, :].set(u_next)          # log u
+
+            return (data, u_next, ql, vl, ul)
+
+        # loop over time steps
+        data_b, u_last, q_log, v_log, u_log = lax.fori_loop(0, T, 
+                                                            body, 
+                                                            (data_b, u_curr, q_log, v_log, u_log))
+        
         return data_b, q_log, v_log, u_log
 
+
     # JIT the whole rollout (T is static for best compile; donate big args to reduce copies)
-    fast_rollout = jax.jit(rollout, static_argnames=("T",))
+    # fast_rollout = jax.jit(rollout_zero, static_argnames=("T",))
+    fast_rollout = jax.jit(rollout_with_policy, static_argnames=("T",))
 
     # Run once to compile, then it’s fast
     t0 = time.time()
@@ -168,4 +231,3 @@ if __name__ == "__main__":
     np.savez(save_path, q_traj=q_traj, v_traj=v_traj, u_traj=u_traj)
     print(f"data saved to: {save_path}")
 
-    
