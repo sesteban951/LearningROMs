@@ -107,7 +107,7 @@ if __name__ == "__main__":
     nv = mjx_model.nv
     nu = mjx_model.nu
 
-    # zero input rollout
+    # rollout with zero input
     u_zero = jnp.zeros((batch_size, mjx_model.nu)) # (batch, nu)
     def rollout_zero(data_b, T):
         """
@@ -141,6 +141,28 @@ if __name__ == "__main__":
                                                     (data_b, q_log, v_log, u_log))
         
         return data_b, q_log, v_log, u_log
+    
+    # rollout with random input sequence
+    def rollout_random(data_b, T, rng):
+        """
+        rollout with random input sequence
+        """
+
+        # prealloc logs on device
+        q_log = jnp.empty((batch_size, T, nq), dtype=jnp.float32)
+        v_log = jnp.empty((batch_size, T, nv), dtype=jnp.float32)
+        u_log = jnp.empty((batch_size, T, nu), dtype=jnp.float32)
+
+        # sample control sequence
+        key, subkey = jax.random.split(rng)
+
+        # sample random control inputs
+        u_lb = -jnp.ones((nu,))  # upper bound is 1.0 vector
+        u_ub =  jnp.ones((nu,))  # lower bound is -1.0 vector
+
+        u_seq = jax.random.uniform(subkey, (T, batch_size, nu), minval=u_lb, maxval=u_ub) # shape (T, batch, nu)
+
+        
     
     # rollout with policy
     def rollout_with_policy(data_b, T):
