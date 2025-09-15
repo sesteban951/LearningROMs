@@ -47,7 +47,6 @@ if __name__ == "__main__":
 
     # get the enviornment config
     config = env.config
-    ctrl_step = config.physics_steps_per_control_step
 
     # import the mujoco model
     model_path = config.model_path
@@ -70,8 +69,8 @@ if __name__ == "__main__":
     print(f"sim_dt: {sim_dt}, control_decimation: {control_decimation}, num_sim_steps: {num_sim_steps}")
 
     # set some intial state bounds
-    q_lb = jnp.array([-0.1, 1.0])
-    q_ub = jnp.array([ 0.9, 3.0])
+    q_lb = jnp.array([ 1.0,  0.1])
+    q_ub = jnp.array([ 3.0,  0.9])
     v_lb = jnp.array([-5.0, -5.0])
     v_ub = jnp.array([ 5.0,  5.0])
 
@@ -83,11 +82,6 @@ if __name__ == "__main__":
 
     print(f"q0_batch: {q0_batch}")
     print(f"v0_batch: {v0_batch}")
-
-    # allocate solution arrays
-    q_traj = jnp.zeros((batch_size, num_sim_steps, mjx_model.nq)) # (batch, time_size, nq)
-    v_traj = jnp.zeros((batch_size, num_sim_steps, mjx_model.nv)) # (batch, time_size, nv)
-    u_traj = jnp.zeros((batch_size, num_sim_steps, mjx_model.nu)) # (batch, time_size, nu)
 
     # create batched mj data, and set the initial states for each data instance
     mjx_data_batched = jax.vmap(lambda i: mjx_data.replace(qpos=q0_batch[i], qvel=v0_batch[i]))(jnp.arange(batch_size))
@@ -241,31 +235,31 @@ if __name__ == "__main__":
 
     # JIT the whole rollout (T is static for best compile; donate big args to reduce copies)
     # fast_rollout = jax.jit(rollout_zero, static_argnames=("T",))
-    # fast_rollout = jax.jit(rollout_with_policy, static_argnames=("T",))
-    fast_rollout_rand = jax.jit(rollout_random, static_argnames=("T",))
+    fast_rollout = jax.jit(rollout_with_policy, static_argnames=("T",))
+    # fast_rollout_rand = jax.jit(rollout_random, static_argnames=("T",))
 
     # Run once to compile, then it’s fast
     t0 = time.time()
-    # data_b, q_traj, v_traj, u_traj = fast_rollout(mjx_data_batched, num_sim_steps)
-    data_b, q_traj, v_traj, u_traj = fast_rollout_rand(mjx_data_batched, num_sim_steps, rng)
+    data_b, q_traj, v_traj, u_traj = fast_rollout(mjx_data_batched, num_sim_steps)
+    # data_b, q_traj, v_traj, u_traj = fast_rollout_rand(mjx_data_batched, num_sim_steps, rng)
     jax.block_until_ready(q_traj)
     print(f"[first run incl. compile] {(time.time()-t0):.3f}s")
 
     t0 = time.time()
-    # data_b, q_traj, v_traj, u_traj = fast_rollout(mjx_data_batched, num_sim_steps)
-    data_b, q_traj, v_traj, u_traj = fast_rollout_rand(mjx_data_batched, num_sim_steps, rng)
+    data_b, q_traj, v_traj, u_traj = fast_rollout(mjx_data_batched, num_sim_steps)
+    # data_b, q_traj, v_traj, u_traj = fast_rollout_rand(mjx_data_batched, num_sim_steps, rng)
     jax.block_until_ready(q_traj)
     print(f"[steady-state] {(time.time()-t0):.3f}s")
 
     t0 = time.time()
-    # data_b, q_traj, v_traj, u_traj = fast_rollout(mjx_data_batched, num_sim_steps)
-    data_b, q_traj, v_traj, u_traj = fast_rollout_rand(mjx_data_batched, num_sim_steps, rng)
+    data_b, q_traj, v_traj, u_traj = fast_rollout(mjx_data_batched, num_sim_steps)
+    # data_b, q_traj, v_traj, u_traj = fast_rollout_rand(mjx_data_batched, num_sim_steps, rng)
     jax.block_until_ready(q_traj)
     print(f"[steady-state] {(time.time()-t0):.3f}s")
 
     t0 = time.time()
-    # data_b, q_traj, v_traj, u_traj = fast_rollout(mjx_data_batched, num_sim_steps)
-    data_b, q_traj, v_traj, u_traj = fast_rollout_rand(mjx_data_batched, num_sim_steps, rng)
+    data_b, q_traj, v_traj, u_traj = fast_rollout(mjx_data_batched, num_sim_steps)
+    # data_b, q_traj, v_traj, u_traj = fast_rollout_rand(mjx_data_batched, num_sim_steps, rng)
     jax.block_until_ready(q_traj)
     print(f"[steady-state] {(time.time()-t0):.3f}s")
 
