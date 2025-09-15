@@ -67,29 +67,27 @@ if __name__ == "__main__":
     control_decimation = env.config.physics_steps_per_control_step  # sim steps per control update
 
     # simulation parameters
-    batch_size = 2048
-    t_max = 5.0
+    batch_size = 1024
+    t_max = 3.0
     num_sim_steps = round(t_max / sim_dt)
 
     print(f"sim_dt: {sim_dt}, control_decimation: {control_decimation}, num_sim_steps: {num_sim_steps}")
 
-    # sample initial states
-    key_name = "default"
-    key_id = mujoco.mj_name2id(mj_model, mujoco.mjtObj.mjOBJ_KEY, key_name)
-    q0 = mj_model.key_qpos[key_id]
-    v0 = mj_model.key_qvel[key_id]
 
     # set some intial state bounds
-    q_lb = jnp.array([-0.25, -0.25]) + q0
-    q_ub = jnp.array([ 0.25,  0.25]) + q0
-    v_lb = jnp.array([-0.1, -0.1]) + v0
-    v_ub = jnp.array([ 0.1,  0.1]) + v0
+    q_lb = jnp.array([-0.1, 1.0])
+    q_ub = jnp.array([ 0.9, 3.0])
+    v_lb = jnp.array([-5.0, -5.0])
+    v_ub = jnp.array([ 5.0,  5.0])
 
     # sample initial states
     key = jax.random.PRNGKey(0)
     key1, key2 = jax.random.split(key, 2)
     q0_batch = jax.random.uniform(key1, (batch_size, mjx_model.nq), minval=q_lb, maxval=q_ub) # shape (batch, nq)
     v0_batch = jax.random.uniform(key2, (batch_size, mjx_model.nv), minval=v_lb, maxval=v_ub) # shape (batch, nv)
+
+    print(f"q0_batch: {q0_batch}")
+    print(f"v0_batch: {v0_batch}")
 
     # allocate solution arrays
     q_traj = jnp.zeros((batch_size, num_sim_steps, mjx_model.nq)) # (batch, time_size, nq)
@@ -156,7 +154,18 @@ if __name__ == "__main__":
     jax.block_until_ready(q_traj)
     print(f"[steady-state] {(time.time()-t0):.3f}s")
 
-    t0 = time.time()
-    data_b, q_traj, v_traj, u_traj = fast_rollout(mjx_data_batched, num_sim_steps)
-    jax.block_until_ready(q_traj)
-    print(f"[steady-state] {(time.time()-t0):.3f}s")
+    # convert to numpy for saving
+    q_traj = np.array(q_traj)
+    v_traj = np.array(v_traj)
+    u_traj = np.array(u_traj)
+
+    print(q_traj.shape)
+    print(v_traj.shape)
+    print(u_traj.shape)
+
+    # save the data
+    save_path = "./data/paddle_ball_data.npz"
+    np.savez(save_path, q_traj=q_traj, v_traj=v_traj, u_traj=u_traj)
+    print(f"data saved to: {save_path}")
+
+    
