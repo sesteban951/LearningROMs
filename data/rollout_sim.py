@@ -35,12 +35,6 @@ from rl.algorithms.ppo_play import PPO_Play
 
 
 ##################################################################################
-# HELPER FUNCTIONS
-##################################################################################
-
-
-
-##################################################################################
 # PARALLEL DYNAMICS ROLLOUT CLASS
 ##################################################################################
 
@@ -169,12 +163,12 @@ class ParallelRollout():
         Initialize the jit functions for rollout.
         """
 
-        print("Jitting rollout functions...")
-
         # jit the rollout functions
-        self._rollout_zero_input_jit = jax.jit(self._rollout_zero_input, static_argnames=('N',))
-
-        print("Jitted rollout functions.")
+        # self.rollout_zero_input_jit = jax.jit(self._rollout_zero_input, 
+        #                                       static_argnames=('N',))
+        self.rollout_zero_input_jit = jax.jit(self._rollout_zero_input, 
+                                              static_argnames=('N',), 
+                                              donate_argnums=(0,1))
 
     # sample initial conditions
     def sample_random_uniform_initial_conditions(self):
@@ -224,24 +218,25 @@ class ParallelRollout():
         
         return u_seq_batch
     
-    # rollout with zero input sequence
+    # rollout with zero input sequence (thin wrapper to allow usage of jitted functions)
     def rollout_zero_input(self, N):
-
+    
         # sample initial conditions
         q0_batch, v0_batch = self.sample_random_uniform_initial_conditions()
 
         # print first initial conditions
         print(f"Initial condition sample (first):")
-        print(f"   q0[0,:]: {q0_batch[0,:]}")
-        print(f"   v0[0,:]: {v0_batch[0,:]}")
+        print(f"   q0[10,:]: {q0_batch[10,:]}")
+        print(f"   v0[10,:]: {v0_batch[10,:]}")
 
         # perform rollout
-        q_log, v_log, u_log = self._rollout_zero_input_jit(q0_batch, v0_batch, N)
+        q_log, v_log, u_log = self.rollout_zero_input_jit(q0_batch, v0_batch, N)
+        q_log.block_until_ready()  # NOTE: not sure if i need this. only need to block one of the outputs
 
         # print the first q and v to make sure things are working
         print(f"First rollout state (first sample):")
-        print(f"   q_log[0,0,:]: {q_log[0,0,:]}")
-        print(f"   v_log[0,0,:]: {v_log[0,0,:]}")
+        print(f"   q_log[10,0,:]: {q_log[10,0,:]}")
+        print(f"   v_log[10,0,:]: {v_log[10,0,:]}")
 
         # perform rollout
         return q_log, v_log, u_log
@@ -309,7 +304,7 @@ if __name__ == "__main__":
     rng = jax.random.PRNGKey(seed)
 
     # choose batch size
-    batch_size = 4096
+    batch_size = 2048
 
     # choose environment and policy parameters
     env_name = "paddle_ball"
