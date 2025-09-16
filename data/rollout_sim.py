@@ -20,7 +20,6 @@ from brax import envs
 # mujoco imports
 import mujoco
 import mujoco.mjx as mjx
-from torch import qr
 
 # change directories to project root (so `from rl...` works even if run from /data)
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -34,12 +33,19 @@ from rl.envs.hopper_env import HopperEnv
 from rl.envs.paddle_ball_env import PaddleBallEnv
 from rl.algorithms.ppo_play import PPO_Play
 
+
 ##################################################################################
-# DYNAMICS ROLLOUT CLASS
+# PARALLEL DYNAMICS ROLLOUT CLASS
+##################################################################################
+
+
+
+##################################################################################
+# PARALLEL DYNAMICS ROLLOUT CLASS
 ##################################################################################
 
 # MJx Rollout class
-class DynamicsRollout():
+class ParallelRollout():
 
     # initialize the class
     def __init__(self, rng, batch_size, env_name, state_bounds, policy_params_path=None):
@@ -68,14 +74,19 @@ class DynamicsRollout():
             print("No policy parameters path provided. Rollouts will use zero input.")
         
         # set the initial condition state bounds
-        self.q_lb, self.q_ub, self.v_lb, self.v_ub = state_bounds
+        self.q_lb, self.q_ub, self.v_lb, self.v_ub = (
+            jnp.asarray(state_bounds[0], dtype=jnp.float32),
+            jnp.asarray(state_bounds[1], dtype=jnp.float32),
+            jnp.asarray(state_bounds[2], dtype=jnp.float32),
+            jnp.asarray(state_bounds[3], dtype=jnp.float32),
+        )
 
         # zeros vector to use with zero input rollouts
-        self.u_zero = jnp.zeros((batch_size, self.nu)) # (batch, nu) zeros
+        self.u_zero = jnp.zeros((batch_size, self.nu), dtype=jnp.float32)  # (batch, nu) zeros
 
         # sampling bounds. Should be [-1.0, 1.0] for all models
-        self.u_lb = -jnp.ones((self.nu,))  # lower bound is -1.0, shape (nu,)
-        self.u_ub =  jnp.ones((self.nu,))  # upper bound is  1.0, shape (nu,)
+        self.u_lb = -jnp.ones((self.nu,), dtype=jnp.float32)  # lower bound is -1.0, shape (nu,)
+        self.u_ub =  jnp.ones((self.nu,), dtype=jnp.float32)  # upper bound is  1.0, shape (nu,)
 
     # initialize model
     def initialize_model(self, model_path):
@@ -112,7 +123,7 @@ class DynamicsRollout():
         self.step_fn_batched = jax.jit(jax.vmap(lambda d: mjx.step(self.mjx_model, d), in_axes=0))
 
         # simulation parameters
-        self.sim_dt = self.mjx_model.opt.timestep  # simulation time step
+        self.sim_dt = float(self.mjx_model.opt.timestep)  # simulation time step
 
         # print message
         print(f"Initialized batched MJX model from [{model_path}].")
@@ -120,6 +131,7 @@ class DynamicsRollout():
         print(f"   nq: {self.nq}")
         print(f"   nv: {self.nv}")
         print(f"   nu: {self.nu}")
+
 
     # initialize the policy and observation functions
     def initialize_policy_and_obs_fn(self, policy_params_path):
@@ -148,6 +160,7 @@ class DynamicsRollout():
         print(f"   env:    [{self.env.robot_name}]")
         print(f"   policy: [{policy_params_path}]")
 
+
     # sample initial conditions
     def sample_random_uniform_initial_conditions(self):
         """
@@ -159,14 +172,21 @@ class DynamicsRollout():
         """
 
         # split the rng
-        self.rng, key1, key2 = jax.random.split(rng, 3)
+        self.rng, key1, key2 = jax.random.split(self.rng, 3)
 
         # sample initial conditions
-        q0_batch = jax.random.uniform(key1, (self.batch_size, self.nq), minval=self.q_lb, maxval=self.q_ub)  # shape (batch, nq)
-        v0_batch = jax.random.uniform(key2, (self.batch_size, self.nv), minval=self.v_lb, maxval=self.v_ub)  # shape (batch, nv)
+        q0_batch = jax.random.uniform(key1, 
+                                      (self.batch_size, self.nq), 
+                                      minval=self.q_lb, 
+                                      maxval=self.q_ub).astype(jnp.float32)
+        v0_batch = jax.random.uniform(key2, 
+                                      (self.batch_size, self.nv), 
+                                      minval=self.v_lb, 
+                                      maxval=self.v_ub).astype(jnp.float32)
 
         return q0_batch, v0_batch
     
+
     # sample inputs from a uniform distribution
     def sample_random_uniform_inputs(self, N):
         """
@@ -189,18 +209,6 @@ class DynamicsRollout():
         
         return u_seq_batch
     
-    # sample inputs from a Gaussian distribution
-    def sample_random_gaussian_inputs(self, N):
-        """
-        Sample random input sequence from a Gaussian distribution.
-        Args:
-            N: int, number of time steps
-        Returns:
-            u_batch: jnp.array, sampled input sequence (batch_size, N, nu)
-        """
-        # TODO: implement Gaussian sampling. Use the "trick" for efficient sampling
-
-        pass
 
     # rollout with zero input sequence
     def rollout_zero(self, T):
@@ -254,13 +262,11 @@ class DynamicsRollout():
 
         return q_log, v_log, u_log
 
-    
-
-
 
 ##################################################################################
 # EXAMPLE USAGE
 ##################################################################################
+
 
 if __name__ == "__main__":
 
@@ -285,14 +291,28 @@ if __name__ == "__main__":
     state_bounds = (q_lb, q_ub, v_lb, v_ub)
     
     # create the rollout instance
-    r = DynamicsRollout(rng, batch_size, env_name, state_bounds, params_path)
+    r = ParallelRollout(rng, batch_size, env_name, state_bounds, params_path)
 
     # number of simulation steps
     t_sim = 4.0                          # total simulation time
     num_steps = round(t_sim / r.sim_dt)  # number of simulation steps
 
     # rollout with zero inputs
+    time_0 = time.time()
     q_log, v_log, u_log = r.rollout_zero(num_steps)
+    time_1 = time.time()
+    print(f"Rollout with zero input took (first): {(time_1-time_0):.3f}s")
+
+    time_0 = time.time()
+    q_log, v_log, u_log = r.rollout_zero(num_steps)
+    time_1 = time.time()
+    print(f"Rollout with zero input took (steady): {(time_1-time_0):.3f}s")
+
+    # rollout with random inputs
+    time_0 = time.time()
+    q_log, v_log, u_log = r.rollout_zero(num_steps)
+    time_1 = time.time()
+    print(f"Rollout with random input took (steady): {(time_1-time_0):.3f}s")
 
     # save the data
     q_log_np = np.array(q_log)
