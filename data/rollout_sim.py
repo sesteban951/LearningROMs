@@ -35,7 +35,7 @@ from rl.algorithms.ppo_play import PPO_Play
 
 
 ##################################################################################
-# PARALLEL DYNAMICS ROLLOUT CLASS
+# HELPER FUNCTIONS
 ##################################################################################
 
 
@@ -72,6 +72,9 @@ class ParallelRollout():
             self.initialize_policy_and_obs_fn(policy_params_path)
         else:
             print("No policy parameters path provided. Rollouts will use zero input.")
+
+        # initialize jit functions
+        self.initialize_jit_functions()
         
         # set the initial condition state bounds
         self.q_lb, self.q_ub, self.v_lb, self.v_ub = (
@@ -110,14 +113,14 @@ class ParallelRollout():
         self.nv = self.mjx_model.nv
         self.nu = self.mjx_model.nu
 
-        # create zeroes data to initialize the parallel model
-        q0_dummy_batch = jnp.zeros((self.batch_size, self.nq), dtype=jnp.float32)  # shape (batch, nq)
-        v0_dummy_batch = jnp.zeros((self.batch_size, self.nv), dtype=jnp.float32)  # shape (batch, nv)
+        # # create zeroes data to initialize the parallel model
+        # q0_dummy_batch = jnp.zeros((self.batch_size, self.nq), dtype=jnp.float32)  # shape (batch, nq)
+        # v0_dummy_batch = jnp.zeros((self.batch_size, self.nv), dtype=jnp.float32)  # shape (batch, nv)
 
-        # create the batched model data
-        self.mjx_data_batched = jax.vmap(
-            lambda q, v: self.mjx_data.replace(qpos=q, qvel=v)
-        )(q0_dummy_batch, v0_dummy_batch)
+        # # create the batched model data
+        # self.mjx_data_batched = jax.vmap(
+        #     lambda q, v: self.mjx_data.replace(qpos=q, qvel=v)
+        # )(q0_dummy_batch, v0_dummy_batch)
 
         # create the batched step function
         self.step_fn_batched = jax.jit(jax.vmap(lambda d: mjx.step(self.mjx_model, d), in_axes=0))
@@ -160,6 +163,18 @@ class ParallelRollout():
         print(f"   env:    [{self.env.robot_name}]")
         print(f"   policy: [{policy_params_path}]")
 
+    # initialize jit functions
+    def initialize_jit_functions(self):
+        """
+        Initialize the jit functions for rollout.
+        """
+
+        print("Jitting rollout functions...")
+
+        # jit the rollout functions
+        self._rollout_zero_input_jit = jax.jit(self._rollout_zero_input, static_argnames=('N',))
+
+        print("Jitted rollout functions.")
 
     # sample initial conditions
     def sample_random_uniform_initial_conditions(self):
@@ -209,56 +224,75 @@ class ParallelRollout():
         
         return u_seq_batch
     
-
     # rollout with zero input sequence
-    def rollout_zero(self, T):
-        """
-        Perform rollout with zero input sequence.
-        Args:
-            T: int, number of time steps
-        Returns:
-            q_log: jnp.array, logged positions (batch_size, T, nq)
-            v_log: jnp.array, logged velocities (batch_size, T, nv)
-            u_log: jnp.array, logged inputs (batch_size, T, nu) (all zeros)
-        """
-
-        # prealloc logs on device
-        q_log = jnp.empty((self.batch_size, T, self.nq), dtype=jnp.float32)
-        v_log = jnp.empty((self.batch_size, T, self.nv), dtype=jnp.float32)
+    def rollout_zero_input(self, N):
 
         # sample initial conditions
         q0_batch, v0_batch = self.sample_random_uniform_initial_conditions()
 
+        # print first initial conditions
+        print(f"Initial condition sample (first):")
+        print(f"   q0[0,:]: {q0_batch[0,:]}")
+        print(f"   v0[0,:]: {v0_batch[0,:]}")
+
+        # perform rollout
+        q_log, v_log, u_log = self._rollout_zero_input_jit(q0_batch, v0_batch, N)
+
+        # print the first q and v to make sure things are working
+        print(f"First rollout state (first sample):")
+        print(f"   q_log[0,0,:]: {q_log[0,0,:]}")
+        print(f"   v_log[0,0,:]: {v_log[0,0,:]}")
+
+        # perform rollout
+        return q_log, v_log, u_log
+
+    # rollout with zero input sequence (pure function to jit)
+    def _rollout_zero_input(self, q0_batch, v0_batch, N):
+        """
+        Perform rollout with zero input sequence.
+        Args:
+            q0_batch: jnp.array, initial positions (batch_size, nq)
+            v0_batch: jnp.array, initial velocities (batch_size, nv)
+            N: int, number of integrations steps
+        Returns:
+            q_log: jnp.array, logged positions (batch_size, N+1, nq)
+            v_log: jnp.array, logged velocities (batch_size, N+1, nv)
+            u_log: jnp.array, logged inputs (batch_size, N, nu) (all zeros)
+        """
+
         # set the initial conditions in the batched data
-        data_batch = jax.vmap(
+        data_0 = jax.vmap(
             lambda q, v: self.mjx_data.replace(qpos=q, qvel=v)
         )(q0_batch, v0_batch)
 
         # set the control to zero in the batched data
-        data_batch = data_batch.replace(ctrl=self.u_zero)
+        data_0 = data_0.replace(ctrl=self.u_zero)
 
         # main step body
-        def body(i, carry):
+        def body(data, _):
 
-            # unpack the carry
-            data, ql, vl = carry
-
-            # apply the control and step
+            # take a step
             data = self.step_fn_batched(data)
 
-            # log data
-            ql = ql.at[:, i, :].set(data.qpos)   # log q
-            vl = vl.at[:, i, :].set(data.qvel)   # log v
+            # state data
+            ql = data.qpos   # log q
+            vl = data.qvel   # log v
 
-            return (data, ql, vl)
-        
-        # loop over time steps
-        data_batch,  q_log, v_log = lax.fori_loop(0, T, 
-                                                  body,
-                                                  (data_batch, q_log, v_log))
-        
-        # build zeros input log
-        u_log = jnp.broadcast_to(self.u_zero[:, None, :], (self.batch_size, T, self.nu))
+            return data, (ql, vl)
+
+        # do the forward propagation
+        data_last, (q_log, v_log) = lax.scan(body, data_0, None, length=N)
+
+        # add the initial condition to the logs
+        q0 = data_0.qpos   # initial q
+        v0 = data_0.qvel   # initial v
+        q_log = jnp.concatenate((q0[None, :, :], q_log), axis=0)  # shape (N+1, batch, nq)
+        v_log = jnp.concatenate((v0[None, :, :], v_log), axis=0)  # shape (N+1, batch, nv)
+
+        # swap axis to get (batch, N+1, dim)
+        q_log  = jnp.swapaxes(q_log, 0, 1)  # shape (batch, N, nq)
+        v_log  = jnp.swapaxes(v_log, 0, 1)  # shape (batch, N, nv)
+        u_log = jnp.broadcast_to(self.u_zero[:, None, :], (self.batch_size, N, self.nu)) # shape (batch, N, nu)
 
         return q_log, v_log, u_log
 
@@ -275,7 +309,7 @@ if __name__ == "__main__":
     rng = jax.random.PRNGKey(seed)
 
     # choose batch size
-    batch_size = 512
+    batch_size = 4096
 
     # choose environment and policy parameters
     env_name = "paddle_ball"
@@ -294,36 +328,80 @@ if __name__ == "__main__":
     r = ParallelRollout(rng, batch_size, env_name, state_bounds, params_path)
 
     # number of simulation steps
-    t_sim = 4.0                          # total simulation time
-    num_steps = round(t_sim / r.sim_dt)  # number of simulation steps
+    num_steps = 400
 
     # rollout with zero inputs
     time_0 = time.time()
-    q_log, v_log, u_log = r.rollout_zero(num_steps)
+    q_log_1, v_log_1, u_log_1 = r.rollout_zero_input(num_steps)
     time_1 = time.time()
     print(f"Rollout with zero input took (first): {(time_1-time_0):.3f}s")
 
     time_0 = time.time()
-    q_log, v_log, u_log = r.rollout_zero(num_steps)
+    q_log_2, v_log_2, u_log_2 = r.rollout_zero_input(num_steps)
     time_1 = time.time()
     print(f"Rollout with zero input took (steady): {(time_1-time_0):.3f}s")
 
-    # rollout with random inputs
     time_0 = time.time()
-    q_log, v_log, u_log = r.rollout_zero(num_steps)
+    q_log_3, v_log_3, u_log_3 = r.rollout_zero_input(num_steps)
     time_1 = time.time()
-    print(f"Rollout with random input took (steady): {(time_1-time_0):.3f}s")
+    print(f"Rollout with zero input took (steady): {(time_1-time_0):.3f}s")
 
-    # save the data
-    q_log_np = np.array(q_log)
-    v_log_np = np.array(v_log)
-    u_log_np = np.array(u_log)
+    time_0 = time.time()
+    q_log_3, v_log_3, u_log_3 = r.rollout_zero_input(num_steps)
+    time_1 = time.time()
+    print(f"Rollout with zero input took (steady): {(time_1-time_0):.3f}s")
 
-    print(q_log_np.shape)
-    print(v_log_np.shape)
-    print(u_log_np.shape)
+    time_0 = time.time()
+    q_log_3, v_log_3, u_log_3 = r.rollout_zero_input(num_steps)
+    time_1 = time.time()
+    print(f"Rollout with zero input took (steady): {(time_1-time_0):.3f}s")
 
-    # save the data
-    save_path = "./data/paddle_ball_data.npz"
-    np.savez(save_path, q_traj=q_log_np, v_traj=v_log_np, u_traj=u_log_np)
-    print(f"Saved data to: {save_path}")
+    print(f"q_log_1 shape: {q_log_1.shape}")
+    print(f"v_log_1 shape: {v_log_1.shape}")
+    print(f"u_log_1 shape: {u_log_1.shape}")
+    print(f"q_log_2 shape: {q_log_2.shape}")
+    print(f"v_log_2 shape: {v_log_2.shape}")
+    print(f"u_log_2 shape: {u_log_2.shape}")
+    print(f"q_log_3 shape: {q_log_3.shape}")
+    print(f"v_log_3 shape: {v_log_3.shape}")
+    print(f"u_log_3 shape: {u_log_3.shape}")
+
+
+    q_log_1 = np.array(q_log_1)
+    v_log_1 = np.array(v_log_1)
+    u_log_1 = np.array(u_log_1)
+    q_log_2 = np.array(q_log_2)
+    v_log_2 = np.array(v_log_2)
+    u_log_2 = np.array(u_log_2)
+    q_log_3 = np.array(q_log_3)
+    v_log_3 = np.array(v_log_3)
+    u_log_3 = np.array(u_log_3)
+    
+    q_err_1 = np.linalg.norm(q_log_1 - q_log_2)
+    q_err_2 = np.linalg.norm(q_log_2 - q_log_3)
+    q_err_3 = np.linalg.norm(q_log_1 - q_log_3)
+    v_err_1 = np.linalg.norm(v_log_1 - v_log_2)
+    v_err_2 = np.linalg.norm(v_log_2 - v_log_3)
+    v_err_3 = np.linalg.norm(v_log_1 - v_log_3)
+    u_err_1 = np.linalg.norm(u_log_1 - u_log_2)
+    u_err_2 = np.linalg.norm(u_log_2 - u_log_3)
+    u_err_3 = np.linalg.norm(u_log_1 - u_log_3)
+
+    print(f"q_err_1: {q_err_1:.6e}, q_err_2: {q_err_2:.6e}, q_err_3: {q_err_3:.6e}")
+    print(f"v_err_1: {v_err_1:.6e}, v_err_2: {v_err_2:.6e}, v_err_3: {v_err_3:.6e}")
+    print(f"u_err_1: {u_err_1:.6e}, u_err_2: {u_err_2:.6e}, u_err_3: {u_err_3:.6e}")
+
+
+    # # save the data
+    # q_log_np = np.array(q_log)
+    # v_log_np = np.array(v_log)
+    # u_log_np = np.array(u_log)
+
+    # print(q_log_np.shape)
+    # print(v_log_np.shape)
+    # print(u_log_np.shape)
+
+    # # save the data
+    # save_path = "./data/paddle_ball_data.npz"
+    # np.savez(save_path, q_traj=q_log_np, v_traj=v_log_np, u_traj=u_log_np)
+    # print(f"Saved data to: {save_path}")
