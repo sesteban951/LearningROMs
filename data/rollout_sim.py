@@ -20,6 +20,7 @@ from brax import envs
 # mujoco imports
 import mujoco
 import mujoco.mjx as mjx
+from torch import qr
 
 # change directories to project root (so `from rl...` works even if run from /data)
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -41,7 +42,7 @@ from rl.algorithms.ppo_play import PPO_Play
 class DynamicsRollout():
 
     # initialize the class
-    def __init__(self, rng, batch_size, env_name, policy_params_path=None):
+    def __init__(self, rng, batch_size, env_name, state_bounds, policy_params_path=None):
 
         # assign the random seed
         self.rng = rng
@@ -61,20 +62,29 @@ class DynamicsRollout():
         self.initialize_model(model_path)
 
         # poly and observation function
-        self.policy_params_path = policy_params_path
         if policy_params_path is not None:
             self.initialize_policy_and_obs_fn(policy_params_path)
         else:
-            print("No policy path provided.")
-            self.step_fn_batched = None
-            self.policy_fn_batched = None
-            self.obs_fn_batched = None
+            print("No policy parameters path provided. Rollouts will use zero input.")
+        
+        # set the initial condition state bounds
+        self.q_lb, self.q_ub, self.v_lb, self.v_ub = state_bounds
 
         # zeros vector to use with zero input rollouts
         self.u_zero = jnp.zeros((batch_size, self.nu)) # (batch, nu) zeros
 
+        # sampling bounds. Should be [-1.0, 1.0] for all models
+        self.u_lb = -jnp.ones((self.nu,))  # lower bound is -1.0, shape (nu,)
+        self.u_ub =  jnp.ones((self.nu,))  # upper bound is  1.0, shape (nu,)
+
     # initialize model
     def initialize_model(self, model_path):
+        """
+        Initialize the mujoco model and data for parallel rollout.
+        
+        Args:
+            model_path: str, path to the mujoco model xml file
+        """
 
         # import the mujoco model
         mj_model = mujoco.MjModel.from_xml_path(model_path)
@@ -90,11 +100,16 @@ class DynamicsRollout():
         self.nu = self.mjx_model.nu
 
         # create zeroes data to initialize the parallel model
-        q0_dummy_batch = jnp.zeros((self.batch_size, self.nq))  # shape (batch, nq)
-        v0_dummy_batch = jnp.zeros((self.batch_size, self.nv))  # shape (batch, nv)
+        q0_dummy_batch = jnp.zeros((self.batch_size, self.nq), dtype=jnp.float32)  # shape (batch, nq)
+        v0_dummy_batch = jnp.zeros((self.batch_size, self.nv), dtype=jnp.float32)  # shape (batch, nv)
 
         # create the batched model data
-        self.mjx_data_batched = jax.vmap(lambda i: self.mjx_data.replace(qpos=q0_dummy_batch[i], qvel=v0_dummy_batch[i]))(jnp.arange(self.batch_size))
+        self.mjx_data_batched = jax.vmap(
+            lambda q, v: self.mjx_data.replace(qpos=q, qvel=v)
+        )(q0_dummy_batch, v0_dummy_batch)
+
+        # create the batched step function
+        self.step_fn_batched = jax.jit(jax.vmap(lambda d: mjx.step(self.mjx_model, d), in_axes=0))
 
         # simulation parameters
         self.sim_dt = self.mjx_model.opt.timestep  # simulation time step
@@ -108,15 +123,21 @@ class DynamicsRollout():
 
     # initialize the policy and observation functions
     def initialize_policy_and_obs_fn(self, policy_params_path):
+        """
+        Initialize the policy and observation functions.
+
+        Args:
+            policy_params_path: str, path to the policy parameters file
+        Returns:
+            policy_fn: function, policy function
+            obs_fn: function, observation function
+        """
 
         # create the policy and observation function
         ppo_player = PPO_Play(self.env, policy_params_path)
 
         # get the policy and observation functions
         policy_fn, obs_fn = ppo_player.policy_and_obs_functions()
-
-        # create the batched step function
-        self.step_fn_batched = jax.jit(jax.vmap(lambda d: mjx.step(self.mjx_model, d), in_axes=(0)))
 
         # create the batched policy and observation functions
         self.policy_fn_batched = jax.vmap(policy_fn, in_axes=0)
@@ -128,19 +149,10 @@ class DynamicsRollout():
         print(f"   policy: [{policy_params_path}]")
 
     # sample initial conditions
-    def sample_initial_conditions(self, batch_size, 
-                                        q_lb, q_ub, 
-                                        v_lb, v_ub):
+    def sample_random_uniform_initial_conditions(self):
         """
         Sample initial conditions for the system.
 
-        Args:
-            rng: jax.random.PRNGKey, random number generator key
-            batch_size: int, number of initial conditions to sample
-            q_lb: jnp.array, lower bound for position (nq,)
-            q_ub: jnp.array, upper bound for position (nq,)
-            v_lb: jnp.array, lower bound for velocity (nv,)
-            v_ub: jnp.array, upper bound for velocity (nv,)
         Returns:
             q0_batch: jnp.array, sampled initial positions (batch_size, nq)
             v0_batch: jnp.array, sampled initial velocities (batch_size, nv)
@@ -150,45 +162,99 @@ class DynamicsRollout():
         self.rng, key1, key2 = jax.random.split(rng, 3)
 
         # sample initial conditions
-        q0_batch = jax.random.uniform(key1, (batch_size, self.nq), minval=q_lb, maxval=q_ub) # shape (batch, nq)
-        v0_batch = jax.random.uniform(key2, (batch_size, self.nv), minval=v_lb, maxval=v_ub) # shape (batch, nv)
+        q0_batch = jax.random.uniform(key1, (self.batch_size, self.nq), minval=self.q_lb, maxval=self.q_ub)  # shape (batch, nq)
+        v0_batch = jax.random.uniform(key2, (self.batch_size, self.nv), minval=self.v_lb, maxval=self.v_ub)  # shape (batch, nv)
 
         return q0_batch, v0_batch
     
-    # sample random actions
-    def sample_random_inputs(self, batch_size, N):
+    # sample inputs from a uniform distribution
+    def sample_random_uniform_inputs(self, N):
         """
         Sample random sequence of inputs for the system.
 
         Args:
-            rng: jax.random.PRNGKey, random number generator key
-            batch_size: int, number of trajectories
             N: int, number of time steps
         Returns:
-            u_bacth:
+            u_batch: jnp.array, sampled input sequence (batch_size, N, nu)
         """
 
         # split the rng
         self.rng, subkey = jax.random.split(self.rng)
 
-        # sample random contorl inputs
-        u_lb = -jnp.ones((self.nu,))  # lower bound is -1.0, shape (nu,)
-        u_ub =  jnp.ones((self.nu,))  # upper bound is  1.0, shape (nu,)
-        u_seq = jax.random.uniform(subkey, 
-                                   (batch_size, N, self.nu), 
-                                   minval=u_lb, 
-                                   maxval=u_ub) # shape (batch, time, nu)
+        # sample random control inputs
+        u_seq_batch = jax.random.uniform(subkey, 
+                                         (self.batch_size, N, self.nu), 
+                                         minval=self.u_lb, 
+                                         maxval=self.u_ub) # shape (batch, time, nu)
         
-        return u_seq
+        return u_seq_batch
     
-    # 
+    # sample inputs from a Gaussian distribution
+    def sample_random_gaussian_inputs(self, N):
+        """
+        Sample random input sequence from a Gaussian distribution.
+        Args:
+            N: int, number of time steps
+        Returns:
+            u_batch: jnp.array, sampled input sequence (batch_size, N, nu)
+        """
+        # TODO: implement Gaussian sampling. Use the "trick" for efficient sampling
 
+        pass
 
+    # rollout with zero input sequence
+    def rollout_zero(self, T):
+        """
+        Perform rollout with zero input sequence.
+        Args:
+            T: int, number of time steps
+        Returns:
+            q_log: jnp.array, logged positions (batch_size, T, nq)
+            v_log: jnp.array, logged velocities (batch_size, T, nv)
+            u_log: jnp.array, logged inputs (batch_size, T, nu) (all zeros)
+        """
 
+        # prealloc logs on device
+        q_log = jnp.empty((self.batch_size, T, self.nq), dtype=jnp.float32)
+        v_log = jnp.empty((self.batch_size, T, self.nv), dtype=jnp.float32)
 
+        # sample initial conditions
+        q0_batch, v0_batch = self.sample_random_uniform_initial_conditions()
 
+        # set the initial conditions in the batched data
+        data_batch = jax.vmap(
+            lambda q, v: self.mjx_data.replace(qpos=q, qvel=v)
+        )(q0_batch, v0_batch)
 
+        # set the control to zero in the batched data
+        data_batch = data_batch.replace(ctrl=self.u_zero)
+
+        # main step body
+        def body(i, carry):
+
+            # unpack the carry
+            data, ql, vl = carry
+
+            # apply the control and step
+            data = self.step_fn_batched(data)
+
+            # log data
+            ql = ql.at[:, i, :].set(data.qpos)   # log q
+            vl = vl.at[:, i, :].set(data.qvel)   # log v
+
+            return (data, ql, vl)
         
+        # loop over time steps
+        data_batch,  q_log, v_log = lax.fori_loop(0, T, 
+                                                  body,
+                                                  (data_batch, q_log, v_log))
+        
+        # build zeros input log
+        u_log = jnp.broadcast_to(self.u_zero[:, None, :], (self.batch_size, T, self.nu))
+
+        return q_log, v_log, u_log
+
+    
 
 
 
@@ -210,8 +276,34 @@ if __name__ == "__main__":
 
     # choose the policy parameters path
     params_path = "./rl/policy/paddle_ball_policy.pkl"
+
+    # state space domain
+    q_lb = jnp.array([ 1.0,  0.1])
+    q_ub = jnp.array([ 3.0,  0.9])
+    v_lb = jnp.array([-5.0, -5.0])
+    v_ub = jnp.array([ 5.0,  5.0])
+    state_bounds = (q_lb, q_ub, v_lb, v_ub)
     
     # create the rollout instance
-    # r = DynamicsRollout(rng, batch_size, env_name)
-    r = DynamicsRollout(rng, batch_size, env_name, params_path)
+    r = DynamicsRollout(rng, batch_size, env_name, state_bounds, params_path)
 
+    # number of simulation steps
+    t_sim = 4.0                          # total simulation time
+    num_steps = round(t_sim / r.sim_dt)  # number of simulation steps
+
+    # rollout with zero inputs
+    q_log, v_log, u_log = r.rollout_zero(num_steps)
+
+    # save the data
+    q_log_np = np.array(q_log)
+    v_log_np = np.array(v_log)
+    u_log_np = np.array(u_log)
+
+    print(q_log_np.shape)
+    print(v_log_np.shape)
+    print(u_log_np.shape)
+
+    # save the data
+    save_path = "./data/paddle_ball_data.npz"
+    np.savez(save_path, q_traj=q_log_np, v_traj=v_log_np, u_traj=u_log_np)
+    print(f"Saved data to: {save_path}")
