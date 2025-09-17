@@ -456,17 +456,36 @@ if __name__ == "__main__":
     # choose batch size
     batch_size = 2048
 
-    # choose environment and policy parameters
-    env_name = "paddle_ball"
+    # number of simulation steps (you get T+1 states and T inputs)
+    T = 500
 
-    # choose the policy parameters path
-    params_path = "./rl/policy/paddle_ball_policy.pkl"
+    # choose environment and policy parameters
+    env_name = "cart_pole"
+    params_path = "./rl/policy/cart_pole_policy.pkl"
+    # env_name = "acrobot"
+    # params_path = "./rl/policy/acrobot_policy.pkl"
+    # env_name = "paddle_ball"
+    # params_path = "./rl/policy/paddle_ball_policy.pkl"
+    # env_name = "hopper"
+    # params_path = "./rl/policy/hopper_policy.pkl"
 
     # state space domain
-    q_lb = jnp.array([ 1.0,  0.1])
-    q_ub = jnp.array([ 3.0,  0.9])
-    v_lb = jnp.array([-5.0, -5.0])
-    v_ub = jnp.array([ 5.0,  5.0])
+    q_lb = jnp.array([-1.0, -jnp.pi])  # cartpole
+    q_ub = jnp.array([ 1.0,  jnp.pi])  
+    v_lb = jnp.array([-5.0, -6.0])  
+    v_ub = jnp.array([ 5.0,  6.0])
+    # q_lb = jnp.array([-jnp.pi, -jnp.pi])  # acrobot
+    # q_ub = jnp.array([ jnp.pi,  jnp.pi])  
+    # v_lb = jnp.array([-3.0, -3.0])  
+    # v_ub = jnp.array([ 3.0,  3.0])
+    # q_lb = jnp.array([ 1.0,  0.1]) # paddle ball
+    # q_ub = jnp.array([ 3.0,  0.9])
+    # v_lb = jnp.array([-5.0, -5.0])
+    # v_ub = jnp.array([ 5.0,  5.0])
+    # q_lb = jnp.array([-0.001, 1.0, -jnp.pi, -0.3])  # hopper
+    # q_ub = jnp.array([ 0.001, 1.5,  jnp.pi,  0.3])  
+    # v_lb = jnp.array([-2.0, -2.0, -3.0, -5.0])
+    # v_ub = jnp.array([ 2.0,  2.0,  3.0,  5.0])
     state_bounds = (q_lb, q_ub, v_lb, v_ub)
 
     # make the config
@@ -479,43 +498,54 @@ if __name__ == "__main__":
     # create the rollout instance
     r = ParallelSimRollout(config)
 
-
-    # number of simulation steps
-    num_steps = 500
-
     # rollout with zero inputs
     time_0 = time.time()
-    # q_log_1, v_log_1, u_log_1 = r.rollout_zero_input(num_steps)
-    q_log_1, v_log_1, u_log_1 = r.rollout_policy_input(num_steps)
-    # q_log_1, v_log_1, u_log_1 = r.rollout_random_input(num_steps)
+    # q_log_1, v_log_1, u_log_1 = r.rollout_zero_input(T)
+    q_log_1, v_log_1, u_log_1 = r.rollout_policy_input(T)
+    # q_log_1, v_log_1, u_log_1 = r.rollout_random_input(T)
+    q_log_1.block_until_ready()
+    v_log_1.block_until_ready()
+    u_log_1.block_until_ready()
     time_1 = time.time()
     print(f"Rollout with zero input took (first): {(time_1-time_0):.3f}s")
 
     time_0 = time.time()
-    # q_log_2, v_log_2, u_log_2 = r.rollout_zero_input(num_steps)
-    q_log_2, v_log_2, u_log_2 = r.rollout_policy_input(num_steps)
-    # q_log_2, v_log_2, u_log_2 = r.rollout_random_input(num_steps)
+    # q_log_2, v_log_2, u_log_2 = r.rollout_zero_input(T)
+    q_log_2, v_log_2, u_log_2 = r.rollout_policy_input(T)
+    # q_log_2, v_log_2, u_log_2 = r.rollout_random_input(T)
+    q_log_2.block_until_ready()
+    v_log_2.block_until_ready()
+    u_log_2.block_until_ready()
     time_1 = time.time()
     print(f"Rollout with zero input took (steady): {(time_1-time_0):.3f}s")
 
     time_0 = time.time()
-    # q_log_3, v_log_3, u_log_3 = r.rollout_zero_input(num_steps)
-    q_log_3, v_log_3, u_log_3 = r.rollout_policy_input(num_steps)
-    # q_log_3, v_log_3, u_log_3 = r.rollout_random_input(num_steps)
+    # q_log_3, v_log_3, u_log_3 = r.rollout_zero_input(T)
+    q_log_3, v_log_3, u_log_3 = r.rollout_policy_input(T)
+    # q_log_3, v_log_3, u_log_3 = r.rollout_random_input(T)
+    q_log_3.block_until_ready()
+    v_log_3.block_until_ready()
+    u_log_3.block_until_ready()
     time_1 = time.time()
     print(f"Rollout with zero input took (steady): {(time_1-time_0):.3f}s")
 
     time_0 = time.time()
-    # q_log_4, v_log_4, u_log_4 = r.rollout_zero_input(num_steps)
-    q_log_4, v_log_4, u_log_4 = r.rollout_policy_input(num_steps)
-    # q_log_4, v_log_4, u_log_4 = r.rollout_random_input(num_steps)
+    # q_log_4, v_log_4, u_log_4 = r.rollout_zero_input(T)
+    q_log_4, v_log_4, u_log_4 = r.rollout_policy_input(T)
+    # q_log_4, v_log_4, u_log_4 = r.rollout_random_input(T)
+    q_log_4.block_until_ready()
+    v_log_4.block_until_ready()
+    u_log_4.block_until_ready()
     time_1 = time.time()
     print(f"Rollout with zero input took (steady): {(time_1-time_0):.3f}s")
 
     time_0 = time.time()
-    # q_log_5, v_log_5, u_log_5 = r.rollout_zero_input(num_steps)
-    q_log_5, v_log_5, u_log_5 = r.rollout_policy_input(num_steps)
-    # q_log_5, v_log_5, u_log_5 = r.rollout_random_input(num_steps)
+    # q_log_5, v_log_5, u_log_5 = r.rollout_zero_input(T)
+    q_log_5, v_log_5, u_log_5 = r.rollout_policy_input(T)
+    # q_log_5, v_log_5, u_log_5 = r.rollout_random_input(T)
+    q_log_5.block_until_ready()
+    v_log_5.block_until_ready()
+    u_log_5.block_until_ready()
     time_1 = time.time()
     print(f"Rollout with zero input took (steady): {(time_1-time_0):.3f}s")
 
@@ -565,6 +595,7 @@ if __name__ == "__main__":
     print(u_log_np.shape)
 
     # save the data
-    save_path = "./data/paddle_ball_data.npz"
+    robot_name = r.env.robot_name
+    save_path = f"./data/{robot_name}_data.npz"
     np.savez(save_path, q_traj=q_log_np, v_traj=v_log_np, u_traj=u_log_np)
     print(f"Saved data to: {save_path}")

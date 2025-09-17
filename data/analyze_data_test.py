@@ -28,8 +28,16 @@ from rl.algorithms.ppo_play import PPO_Play
 
 if __name__ == "__main__":
 
+    # choose the environment
+    env = envs.get_environment("cart_pole")
+    # env = envs.get_environment("acrobot")
+    # env = envs.get_environment("paddle_ball")
+    # env = envs.get_environment("hopper")
+    config = env.config
+    robot_name = env.robot_name
+
     # load the data
-    file_name = "./data/paddle_ball_data.npz"
+    file_name = f"./data/{robot_name}_data.npz"
     data = np.load(file_name)
 
     # access the arrays
@@ -53,10 +61,6 @@ if __name__ == "__main__":
     traj_idx = np.random.randint(batch_size)
 
     print(f"Playing back trajectory {traj_idx} of {batch_size}")
-
-    # load the mujoco model
-    env = envs.get_environment("paddle_ball")
-    config = env.config
 
     model_path = config.model_path
     mj_model = mujoco.MjModel.from_xml_path(model_path)
