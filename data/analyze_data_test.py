@@ -38,12 +38,13 @@ if __name__ == "__main__":
     u_traj = data['u_traj']
 
     # get the shape of the data
-    batch_size, N, nq = q_traj.shape
+    batch_size, N_state, nq = q_traj.shape
     _, _, nv = v_traj.shape
-    _, _, nu = u_traj.shape
+    _, N_input, nu = u_traj.shape
 
     print(f"batch_size: {batch_size}")
-    print(f"N: {N}")
+    print(f"N_state: {N_state}")
+    print(f"N_input: {N_input}")
     print(f"nq: {nq}")
     print(f"nv: {nv}")
     print(f"nu: {nu}")
@@ -82,10 +83,6 @@ if __name__ == "__main__":
         mj_data.qvel[:] = v_traj[traj_idx, 0]
         mj_data.ctrl[:] = u_traj[traj_idx, 0]
 
-        print(f"Initial qpos: {mj_data.qpos}")
-        print(f"Initial qvel: {mj_data.qvel}")
-        print(f"Initial ctrl: {mj_data.ctrl}")
-
         mujoco.mj_forward(mj_model, mj_data)  # recompute derived quantities
         viewer.sync()
 
@@ -98,15 +95,14 @@ if __name__ == "__main__":
 
             # fix the state
             step_idx = int(t_sim / sim_dt)
-            
-            if step_idx >= N:
+
+            if step_idx >= N_state:
                 print("Reached the end of the trajectory")
                 break
             
             # hardcode the trajectory state for playback
             mj_data.qpos = q_traj[traj_idx, step_idx]
             mj_data.qvel = v_traj[traj_idx, step_idx]
-            mj_data.ctrl = u_traj[traj_idx, step_idx]
 
             # step the simulation
             mujoco.mj_step(mj_model, mj_data)
@@ -124,7 +120,8 @@ if __name__ == "__main__":
     n_plot = min(n_plot, batch_size)
 
     # time vector (N steps at dt)
-    t_traj = np.arange(N) * sim_dt
+    t_state = np.arange(N_state) * sim_dt
+    t_input = np.arange(N_input) * sim_dt
 
     # figure and axes: nq rows, 3 cols (q, v, u)
     fig, axes = plt.subplots(nrows=nq, ncols=3, figsize=(14, 2.2 * nq), sharex=True)
@@ -137,7 +134,7 @@ if __name__ == "__main__":
         # --- Column 0: q[i] ---
         for _ in range(n_plot):
             idx = np.random.randint(batch_size)
-            ax_q.plot(t_traj, q_traj[idx, :, i], alpha=0.5)
+            ax_q.plot(t_state, q_traj[idx, :, i], alpha=0.5)
         ax_q.set_ylabel(f"q[{i}]")
         ax_q.grid(True, alpha=0.3)
         if i == 0:
@@ -147,7 +144,7 @@ if __name__ == "__main__":
         if i < nv:
             for _ in range(n_plot):
                 idx = np.random.randint(batch_size)
-                ax_v.plot(t_traj, v_traj[idx, :, i], alpha=0.5)
+                ax_v.plot(t_state, v_traj[idx, :, i], alpha=0.5)
             ax_v.set_ylabel(f"v[{i}]")
             ax_v.grid(True, alpha=0.3)
             if i == 0:
@@ -159,7 +156,7 @@ if __name__ == "__main__":
         if i < nu:
             for _ in range(n_plot):
                 idx = np.random.randint(batch_size)
-                ax_u.plot(t_traj, u_traj[idx, :, i], alpha=0.5)
+                ax_u.plot(t_input, u_traj[idx, :, i], alpha=0.5)
             ax_u.set_ylabel(f"u[{i}]")
             ax_u.grid(True, alpha=0.3)
             if i == 0:
