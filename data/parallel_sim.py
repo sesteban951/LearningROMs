@@ -8,6 +8,7 @@
 import os, sys
 import numpy as np
 import time
+from dataclasses import dataclass
 
 # jax imports
 import jax
@@ -38,34 +39,47 @@ from rl.algorithms.ppo_play import PPO_Play
 # PARALLEL DYNAMICS ROLLOUT CLASS
 ##################################################################################
 
-# MJx Rollout class
+# struct to hold the parallel sim config
+@dataclass
+class ParallelSimConfig:
+
+    env_name: str                  # environment name
+    batch_size: int                # batch size for parallel rollout
+    state_bounds: tuple            # tuple of (q_lb, q_ub, v_lb, v_ub) for initial condition sampling
+    rng: jax.random.PRNGKey        # random number generator key
+    policy_params_path: str=None   # path to policy parameters file (if None, cannot run closed loop with policy)
+
+
+# MJX Rollout class
 class ParallelSimRollout():
 
     # initialize the class
-    def __init__(self, rng, batch_size, env_name, state_bounds, policy_params_path=None):
+    def __init__(self, config):
 
         # assign the random seed
-        self.rng = rng
+        self.rng = config.rng
 
         # assign the batch size
-        self.batch_size = batch_size
+        self.batch_size = config.batch_size
 
         # load the enviornment
-        self.env = envs.get_environment(env_name)
-        config = self.env.config
+        self.env = envs.get_environment(config.env_name)
+        env_config = self.env.config
         
         # load some parameters
-        self.control_decimation = config.physics_steps_per_control_step
+        self.control_decimation = env_config.physics_steps_per_control_step
 
         # load the mujoco model for parallel sim
-        model_path = config.model_path
+        model_path = env_config.model_path
         self.initialize_model(model_path)
 
         # poly and observation function
-        if policy_params_path is not None:
-            self.initialize_policy_and_obs_fn(policy_params_path)
+        if config.policy_params_path is not None:
+            self.initialize_policy_and_obs_fn(config.policy_params_path)
         else:
             print("No policy parameters path provided. Rollouts will use zero input.")
+            self.policy_fn_batched = None
+            self.obs_fn_batched = None
 
         # initialize jit functions
         self.initialize_jit_functions()
@@ -157,19 +171,19 @@ class ParallelSimRollout():
         """
 
         # jit the rollout with zero inputs function
-        # self.rollout_zero_input_jit = jax.jit(self._rollout_zero_input, 
-        #                                       static_argnames=('T',))
         self.rollout_zero_input_jit = jax.jit(self._rollout_zero_input, 
                                               static_argnames=('T',), 
-                                              donate_argnums=(0,1))
+                                              donate_argnums=(0, 1))
         
         # jit the rollout with policy inputs function
-        # self.rollout_policy_input_jit = jax.jit(self._rollout_policy_input, 
-        #                                       static_argnames=('T',))
         self.rollout_policy_input_jit = jax.jit(self._rollout_policy_input, 
                                                static_argnames=('T',), 
-                                               donate_argnums=(0,1))
-
+                                               donate_argnums=(0, 1))
+        
+        # jit the rollout with random inputs function
+        self.rollout_random_input_jit = jax.jit(self._rollout_random_input,
+                                               static_argnames=('T',),
+                                               donate_argnums=(0, 1))
 
     # sample initial conditions
     def sample_random_uniform_initial_conditions(self):
@@ -247,7 +261,7 @@ class ParallelSimRollout():
         """
 
         # set the initial conditions in the batched data
-        data_0 = jax.vmap(lambda q, v: self.mjx_data.replace(qpos=q, qvel=v))(q0_batch, v0_batch)
+        data_0 = jax.vmap(lambda q0, v0: self.mjx_data.replace(qpos=q0, qvel=v0))(q0_batch, v0_batch)
 
         # set the control to zero in the batched data
         data_0 = data_0.replace(ctrl=self.u_zero)
@@ -279,11 +293,15 @@ class ParallelSimRollout():
         u_log = jnp.broadcast_to(self.u_zero[:, None, :], (self.batch_size, T, self.nu)) # shape (batch, T, nu)
 
         return q_log, v_log, u_log
-    
+        
 
     # rollout closed loop using RL policy (thin wrapper to allow usage of jitted functions)
     def rollout_policy_input(self, T):
-    
+
+        # check that policy function is available
+        if (self.policy_fn_batched is None) or (self.obs_fn_batched is None):
+            raise ValueError("Policy or Observation function is not set.")
+
         # sample initial conditions
         q0_batch, v0_batch = self.sample_random_uniform_initial_conditions()
 
@@ -308,7 +326,7 @@ class ParallelSimRollout():
         """
 
         # set the initial conditions in the batched data
-        data_0 = jax.vmap(lambda q, v: self.mjx_data.replace(qpos=q, qvel=v))(q0_batch, v0_batch)
+        data_0 = jax.vmap(lambda q0, v0: self.mjx_data.replace(qpos=q0, qvel=v0))(q0_batch, v0_batch)
 
         # start with zero action 
         u0 = jnp.zeros((self.batch_size, self.nu), dtype=jnp.float32)  # (batch_size, nu) zeros
@@ -357,6 +375,72 @@ class ParallelSimRollout():
         return q_log, v_log, u_log
 
 
+    # rollout with random input sequence (thin wrapper to allow usage of jitted functions)
+    def rollout_random_input(self, T):
+    
+        # sample initial conditions
+        q0_batch, v0_batch = self.sample_random_uniform_initial_conditions()
+
+        # sample random input sequence
+        u_seq_batch = self.sample_random_uniform_inputs(T)
+
+        # perform rollout
+        q_log, v_log, u_log = self.rollout_random_input_jit(q0_batch, v0_batch, u_seq_batch, T)
+
+        # perform rollout
+        return q_log, v_log, u_log
+
+    # rollout with random input sequence (pure function to jit)
+    def _rollout_random_input(self, q0_batch, v0_batch, u_seq_batch, T):
+        """
+        Perform rollout with random input sequence.
+        Args:
+            q0_batch: jnp.array, initial positions (batch_size, nq)
+            v0_batch: jnp.array, initial velocities (batch_size, nv)
+            u_seq_batch: jnp.array, input sequence (batch_size, T, nu)
+            T: int, number of integrations steps
+        Returns:
+            q_log: jnp.array, logged positions (batch_size, T+1, nq)
+            v_log: jnp.array, logged velocities (batch_size, T+1, nv)
+            u_log: jnp.array, logged inputs (batch_size, T, nu) 
+        """
+
+        # set the initial conditions in the batched data
+        data_0 = jax.vmap(lambda q0, v0: self.mjx_data.replace(qpos=q0, qvel=v0))(q0_batch, v0_batch)
+
+        # swap axis to get (T, batch, nu) for lax.scan
+        u_seq_batch_swapped = jnp.swapaxes(u_seq_batch, 0, 1)  # (T, batch, nu)
+
+        # main step body
+        def body(data, u_t):
+
+            # apply control and take step
+            data = data.replace(ctrl=u_t)
+            data = self.step_fn_batched(data)
+
+            # state data
+            ql = data.qpos   # log q
+            vl = data.qvel   # log v
+
+            return data, (ql, vl, u_t)
+
+        # forward propagation
+        data_last, (q_log, v_log, u_log) = lax.scan(body, data_0, u_seq_batch_swapped, length=T)
+
+        # add the initial condition to the logs
+        q0 = data_0.qpos   # initial q
+        v0 = data_0.qvel   # initial v
+        q_log = jnp.concatenate((q0[None, :, :], q_log), axis=0)  # shape (T+1, batch, nq)
+        v_log = jnp.concatenate((v0[None, :, :], v_log), axis=0)  # shape (T+1, batch, nv)
+
+        # swap axis to get (batch, T+1, dim)
+        q_log  = jnp.swapaxes(q_log, 0, 1)  # shape (batch, T+1, nq)
+        v_log  = jnp.swapaxes(v_log, 0, 1)  # shape (batch, T+1, nv)
+        u_log  = u_seq_batch                # shape (batch, T, nu)
+
+        return q_log, v_log, u_log
+
+
 ##################################################################################
 # EXAMPLE USAGE
 ##################################################################################
@@ -384,41 +468,54 @@ if __name__ == "__main__":
     v_lb = jnp.array([-5.0, -5.0])
     v_ub = jnp.array([ 5.0,  5.0])
     state_bounds = (q_lb, q_ub, v_lb, v_ub)
+
+    # make the config
+    config = ParallelSimConfig(env_name=env_name,
+                               batch_size=batch_size,
+                               state_bounds=state_bounds,
+                               rng=rng,
+                               policy_params_path=params_path)
     
     # create the rollout instance
-    r = ParallelSimRollout(rng, batch_size, env_name, state_bounds, params_path)
+    r = ParallelSimRollout(config)
+
 
     # number of simulation steps
-    num_steps = 400
+    num_steps = 500
 
     # rollout with zero inputs
     time_0 = time.time()
     # q_log_1, v_log_1, u_log_1 = r.rollout_zero_input(num_steps)
     q_log_1, v_log_1, u_log_1 = r.rollout_policy_input(num_steps)
+    # q_log_1, v_log_1, u_log_1 = r.rollout_random_input(num_steps)
     time_1 = time.time()
     print(f"Rollout with zero input took (first): {(time_1-time_0):.3f}s")
 
     time_0 = time.time()
     # q_log_2, v_log_2, u_log_2 = r.rollout_zero_input(num_steps)
     q_log_2, v_log_2, u_log_2 = r.rollout_policy_input(num_steps)
+    # q_log_2, v_log_2, u_log_2 = r.rollout_random_input(num_steps)
     time_1 = time.time()
     print(f"Rollout with zero input took (steady): {(time_1-time_0):.3f}s")
 
     time_0 = time.time()
     # q_log_3, v_log_3, u_log_3 = r.rollout_zero_input(num_steps)
     q_log_3, v_log_3, u_log_3 = r.rollout_policy_input(num_steps)
+    # q_log_3, v_log_3, u_log_3 = r.rollout_random_input(num_steps)
     time_1 = time.time()
     print(f"Rollout with zero input took (steady): {(time_1-time_0):.3f}s")
 
     time_0 = time.time()
     # q_log_4, v_log_4, u_log_4 = r.rollout_zero_input(num_steps)
     q_log_4, v_log_4, u_log_4 = r.rollout_policy_input(num_steps)
+    # q_log_4, v_log_4, u_log_4 = r.rollout_random_input(num_steps)
     time_1 = time.time()
     print(f"Rollout with zero input took (steady): {(time_1-time_0):.3f}s")
 
     time_0 = time.time()
     # q_log_5, v_log_5, u_log_5 = r.rollout_zero_input(num_steps)
     q_log_5, v_log_5, u_log_5 = r.rollout_policy_input(num_steps)
+    # q_log_5, v_log_5, u_log_5 = r.rollout_random_input(num_steps)
     time_1 = time.time()
     print(f"Rollout with zero input took (steady): {(time_1-time_0):.3f}s")
 
