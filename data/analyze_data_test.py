@@ -29,10 +29,10 @@ from rl.algorithms.ppo_play import PPO_Play
 if __name__ == "__main__":
 
     # choose the environment
-    env = envs.get_environment("cart_pole")
+    # env = envs.get_environment("cart_pole")
     # env = envs.get_environment("acrobot")
     # env = envs.get_environment("paddle_ball")
-    # env = envs.get_environment("hopper")
+    env = envs.get_environment("hopper")
     config = env.config
     robot_name = env.robot_name
 
