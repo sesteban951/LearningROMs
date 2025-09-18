@@ -29,8 +29,8 @@ from rl.algorithms.ppo_play import PPO_Play
 if __name__ == "__main__":
 
     # choose the environment
-    env = envs.get_environment("cart_pole")
-    # env = envs.get_environment("acrobot")
+    # env = envs.get_environment("cart_pole")
+    env = envs.get_environment("acrobot")
     # env = envs.get_environment("paddle_ball")
     # env = envs.get_environment("hopper")
     config = env.config
@@ -56,6 +56,17 @@ if __name__ == "__main__":
     print(f"nq: {nq}")
     print(f"nv: {nv}")
     print(f"nu: {nu}")
+
+    # percent degemnts of the trajectory to use
+    traj_segment_percent = (0.0, 0.5)  # (start, end) as percent of trajectory length
+    start_idx = int(traj_segment_percent[0] * N_state)
+    end_idx = int(traj_segment_percent[1] * N_state)
+    q_traj = q_traj[:, start_idx:end_idx, :]
+    v_traj = v_traj[:, start_idx:end_idx, :]
+    u_traj = u_traj[:, start_idx:end_idx, :]
+    N_state = q_traj.shape[1]
+    N_input = u_traj.shape[1]
+    print(f"Using trajectory segment from {start_idx} to {end_idx} (N_state = {N_state})")
 
     # select one random trajectory to playback
     traj_idx = np.random.randint(batch_size)
@@ -172,5 +183,24 @@ if __name__ == "__main__":
     for ax in axes[-1, :]:
         ax.set_xlabel("Time [s]")
 
+    plt.tight_layout()
+    plt.show()
+
+    # plot the phase for each variable
+    fig, axes = plt.subplots(nrows=nq, ncols=1, figsize=(7, 2.2 * nq), sharex=True)
+    if nq == 1:
+        axes = axes[None, :]  # ensure 2D indexing when nq == 1 
+    for i in range(nq):
+        ax = axes[i]
+        if i < nv:
+            for _ in range(n_plot):
+                idx = np.random.randint(batch_size)
+                ax.plot(q_traj[idx, :, i], v_traj[idx, :, i], alpha=0.5)
+            ax.set_xlabel(f"q[{i}]")
+            ax.set_ylabel(f"v[{i}]")
+            ax.grid(True, alpha=0.3)
+            ax.set_title(f"Phase Plot: q[{i}] vs v[{i}]")
+        else:
+            ax.axis("off")
     plt.tight_layout()
     plt.show()

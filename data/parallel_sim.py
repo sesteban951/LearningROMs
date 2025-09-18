@@ -497,22 +497,22 @@ if __name__ == "__main__":
     batch_size = 2048
 
     # trajectory length
-    T = 500
+    T = 1000
 
     # choose environment, policy parameters, and state space bounds
-    env_name = "cart_pole"
-    params_path = "./rl/policy/cart_pole_policy.pkl"
-    q_lb = jnp.array([-1.0, -jnp.pi])  # cartpole
-    q_ub = jnp.array([ 1.0,  jnp.pi])  
-    v_lb = jnp.array([-5.0, -6.0])  
-    v_ub = jnp.array([ 5.0,  6.0])
+    # env_name = "cart_pole"
+    # params_path = "./rl/policy/cart_pole_policy.pkl"
+    # q_lb = jnp.array([-1.0, -jnp.pi])  # cartpole
+    # q_ub = jnp.array([ 1.0,  jnp.pi])  
+    # v_lb = jnp.array([-5.0, -6.0])  
+    # v_ub = jnp.array([ 5.0,  6.0])
 
-    # env_name = "acrobot"
-    # params_path = "./rl/policy/acrobot_policy.pkl"
-    # q_lb = jnp.array([-jnp.pi, -jnp.pi])  # acrobot
-    # q_ub = jnp.array([ jnp.pi,  jnp.pi])  
-    # v_lb = jnp.array([-3.0, -3.0])  
-    # v_ub = jnp.array([ 3.0,  3.0])
+    env_name = "acrobot"
+    params_path = "./rl/policy/acrobot_policy.pkl"
+    q_lb = jnp.array([-jnp.pi, -jnp.pi])  # acrobot
+    q_ub = jnp.array([ jnp.pi,  jnp.pi])  
+    v_lb = jnp.array([-3.0, -3.0])  
+    v_ub = jnp.array([ 3.0,  3.0])
 
     # env_name = "paddle_ball"
     # params_path = "./rl/policy/paddle_ball_policy.pkl"
