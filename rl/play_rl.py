@@ -56,8 +56,8 @@ def parse_contact(data):
             geom1_name = mujoco.mj_id2name(data.model, mujoco.mjtObj.mjOBJ_GEOM, geom1_id)
             geom2_name = mujoco.mj_id2name(data.model, mujoco.mjtObj.mjOBJ_GEOM, geom2_id)
 
-            print(f"Contact {i}: {geom1_name} - {geom2_name}")
-    
+            print(f"Contact {i}: {geom1_name} ({geom1_id}) and {geom2_name} ({geom2_id})")
+
     return foot_in_contact
 
 #################################################################

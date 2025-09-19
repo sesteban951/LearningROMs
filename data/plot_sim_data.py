@@ -23,6 +23,10 @@ from rl.envs.hopper_env import HopperEnv
 from rl.envs.paddle_ball_env import PaddleBallEnv
 from rl.algorithms.ppo_play import PPO_Play
 
+#################################################################
+
+# decode the contact log
+# def decode_contact(c_log, )
 
 #################################################################
 
@@ -30,9 +34,9 @@ if __name__ == "__main__":
 
     # choose the environment
     # env = envs.get_environment("cart_pole")
-    env = envs.get_environment("acrobot")
+    # env = envs.get_environment("acrobot")
     # env = envs.get_environment("paddle_ball")
-    # env = envs.get_environment("hopper")
+    env = envs.get_environment("hopper")
     config = env.config
     robot_name = env.robot_name
 
@@ -44,6 +48,7 @@ if __name__ == "__main__":
     q_traj = data['q_traj']
     v_traj = data['v_traj']
     u_traj = data['u_traj']
+    c_traj = data['c_traj'] if 'c_traj' in data else None
 
     # get the shape of the data
     batch_size, N_state, nq = q_traj.shape

@@ -340,10 +340,10 @@ class ParallelSim():
         q0_batch, v0_batch = self.sample_random_uniform_initial_conditions()
 
         # perform rollout
-        q_log, v_log, u_log = self.rollout_policy_input_jit(q0_batch, v0_batch, T)
+        q_log, v_log, u_log, c_log = self.rollout_policy_input_jit(q0_batch, v0_batch, T)
 
         # perform rollout
-        return q_log, v_log, u_log
+        return q_log, v_log, u_log, c_log
 
     # rollout closed loop using RL policy (pure function to jit)
     def _rollout_policy_input(self, q0_batch, v0_batch, T):
@@ -357,6 +357,7 @@ class ParallelSim():
             q_log: jnp.array, logged positions (batch_size, T, nq)
             v_log: jnp.array, logged velocities (batch_size, T, nv)
             u_log: jnp.array, logged inputs (batch_size, T-1, nu)
+            c_log: jnp.array, logged contact pairs (batch_size, T, nconmax, 2)
         """
 
         # number of integration steps
@@ -389,23 +390,29 @@ class ParallelSim():
             data = data.replace(ctrl=u_next)
             data = self.step_fn_batched(data)
 
-            return (data, u_next, t + 1), (data.qpos, data.qvel, u_next)
+            # extract contact pairs
+            contact = self.parse_contact(data)
+
+            return (data, u_next, t + 1), (data.qpos, data.qvel, u_next, contact)
 
         # do the forward propagation
-        (data_last, u_last, _), (q_log, v_log, u_log) = lax.scan(body, (data_0, u0, 0), None, length=S)
+        (data_last, u_last, _), (q_log, v_log, u_log, c_log) = lax.scan(body, (data_0, u0, 0), None, length=S)
 
         # add the initial condition to the logs
         q0 = data_0.qpos   # initial q
         v0 = data_0.qvel   # initial v
+        c0 = self.parse_contact(data_0)  # initial contact pairs
         q_log = jnp.concatenate((q0[None, :, :], q_log), axis=0)  # shape (T, batch_size, nq)
         v_log = jnp.concatenate((v0[None, :, :], v_log), axis=0)  # shape (T, batch_size, nv)
+        c_log = jnp.concatenate((c0[None, :, :, :], c_log), axis=0)  # shape (T, batch_size, nconmax, 2)
 
         # swap axis to get (batch, T, dim)
         q_log  = jnp.swapaxes(q_log, 0, 1)  # shape (batch_size, T, nq)
         v_log  = jnp.swapaxes(v_log, 0, 1)  # shape (batch_size, T, nv)
         u_log  = jnp.swapaxes(u_log, 0, 1)  # shape (batch_size, T-1, nu)
+        c_log  = jnp.swapaxes(c_log, 0, 1)  # shape (batch_size, T, nconmax, 2)
 
-        return q_log, v_log, u_log
+        return q_log, v_log, u_log, c_log
 
 
     ######################################### RANDOM INPUT ROLLOUT #########################################
@@ -487,11 +494,32 @@ class ParallelSim():
     ######################################### UTILS #########################################
 
     # helper to log contact information
-    # def parse_contact(self, data_b):
+    def parse_contact(self, data_b):
+        """
+        Extract contact pairs from batched mjx data.
 
+        Args:
+            data_b: mjx.MjData, batched mjx data
+        Returns:
+            contact_pairs: jnp.array, contact pairs (batch, nconmax, 2)
+                           Each entry is (geom1_id, geom2_id), unused slots padded with -1.
+        """
 
+        # contacts are stored in fixed-length buffers
+        ncon = data_b._impl.ncon          # (batch,), number of contact pairs active
+        ncon = jnp.atleast_1d(ncon)       # ensure shape (batch,)
+        g1 = data_b._impl.contact.geom1   # (batch, nconmax)
+        g2 = data_b._impl.contact.geom2   # (batch, nconmax)
 
+        # stack into (batch, nconmax, 2)
+        pairs = jnp.stack([g1, g2], axis=-1)
 
+        # mask out inactive contacts
+        mask = jnp.arange(pairs.shape[1])[None, :] < ncon[:, None]
+        pairs = jnp.where(mask[..., None], pairs, -jnp.ones_like(pairs)) 
+
+        return pairs
+    
 
 ##################################################################################
 # EXAMPLE USAGE
@@ -519,12 +547,12 @@ if __name__ == "__main__":
     # v_lb = jnp.array([-5.0, -6.0])  
     # v_ub = jnp.array([ 5.0,  6.0])
 
-    env_name = "acrobot"
-    params_path = "./rl/policy/acrobot_policy.pkl"
-    q_lb = jnp.array([-jnp.pi, -jnp.pi])  # acrobot
-    q_ub = jnp.array([ jnp.pi,  jnp.pi])  
-    v_lb = jnp.array([-3.0, -3.0])  
-    v_ub = jnp.array([ 3.0,  3.0])
+    # env_name = "acrobot"
+    # params_path = "./rl/policy/acrobot_policy.pkl"
+    # q_lb = jnp.array([-jnp.pi, -jnp.pi])  # acrobot
+    # q_ub = jnp.array([ jnp.pi,  jnp.pi])  
+    # v_lb = jnp.array([-3.0, -3.0])  
+    # v_ub = jnp.array([ 3.0,  3.0])
 
     # env_name = "paddle_ball"
     # params_path = "./rl/policy/paddle_ball_policy.pkl"
@@ -533,12 +561,12 @@ if __name__ == "__main__":
     # v_lb = jnp.array([-5.0, -5.0])
     # v_ub = jnp.array([ 5.0,  5.0])
 
-    # env_name = "hopper"
-    # params_path = "./rl/policy/hopper_policy.pkl"
-    # q_lb = jnp.array([-0.001, 1.0, -jnp.pi, -0.3])  # hopper
-    # q_ub = jnp.array([ 0.001, 1.5,  jnp.pi,  0.3])  
-    # v_lb = jnp.array([-2.0, -2.0, -3.0, -5.0])
-    # v_ub = jnp.array([ 2.0,  2.0,  3.0,  5.0])
+    env_name = "hopper"
+    params_path = "./rl/policy/hopper_policy.pkl"
+    q_lb = jnp.array([-0.001, 1.0, -jnp.pi, -0.3])  # hopper
+    q_ub = jnp.array([ 0.001, 1.5,  jnp.pi,  0.3])  
+    v_lb = jnp.array([-2.0, -2.0, -3.0, -5.0])
+    v_ub = jnp.array([ 2.0,  2.0,  3.0,  5.0])
 
     # assign the state bounds
     state_bounds = (q_lb, q_ub, v_lb, v_ub)
@@ -560,65 +588,57 @@ if __name__ == "__main__":
 
     # rollout with chosen inputs
     time_0 = time.time()
-    q_log_1, v_log_1, u_log_1 = rollout_fn(T)
+    q_log_1, v_log_1, u_log_1, c_log_1 = rollout_fn(T)
     q_log_1.block_until_ready()
     v_log_1.block_until_ready()
     u_log_1.block_until_ready()
+    c_log_1.block_until_ready()
     time_1 = time.time()
     print(f"Rollout with chosen inputs took (first): {(time_1-time_0):.3f}s")
 
     time_0 = time.time()
-    q_log_2, v_log_2, u_log_2 = rollout_fn(T)
+    q_log_2, v_log_2, u_log_2, c_log_2 = rollout_fn(T)
     q_log_2.block_until_ready()
     v_log_2.block_until_ready()
     u_log_2.block_until_ready()
+    c_log_2.block_until_ready()
     time_1 = time.time()
     print(f"Rollout with chosen inputs took (steady): {(time_1-time_0):.3f}s")
 
     time_0 = time.time()
-    q_log_3, v_log_3, u_log_3 = rollout_fn(T)
+    q_log_3, v_log_3, u_log_3, c_log_3 = rollout_fn(T)
     q_log_3.block_until_ready()
     v_log_3.block_until_ready()
     u_log_3.block_until_ready()
-    time_1 = time.time()
-    print(f"Rollout with chosen inputs took (steady): {(time_1-time_0):.3f}s")
-
-    time_0 = time.time()
-    q_log_4, v_log_4, u_log_4 = rollout_fn(T)
-    q_log_4.block_until_ready()
-    v_log_4.block_until_ready()
-    u_log_4.block_until_ready()
-    time_1 = time.time()
-    print(f"Rollout with chosen inputs took (steady): {(time_1-time_0):.3f}s")
-
-    time_0 = time.time()
-    q_log_5, v_log_5, u_log_5 = rollout_fn(T)
-    q_log_5.block_until_ready()
-    v_log_5.block_until_ready()
-    u_log_5.block_until_ready()
+    c_log_3.block_until_ready()
     time_1 = time.time()
     print(f"Rollout with chosen inputs took (steady): {(time_1-time_0):.3f}s")
 
     print(f"q_log_1 shape: {q_log_1.shape}")
     print(f"v_log_1 shape: {v_log_1.shape}")
     print(f"u_log_1 shape: {u_log_1.shape}")
+    print(f"c_log_1 shape: {c_log_1.shape}")
     print(f"q_log_2 shape: {q_log_2.shape}")
     print(f"v_log_2 shape: {v_log_2.shape}")
     print(f"u_log_2 shape: {u_log_2.shape}")
+    print(f"c_log_2 shape: {c_log_2.shape}")
     print(f"q_log_3 shape: {q_log_3.shape}")
     print(f"v_log_3 shape: {v_log_3.shape}")
     print(f"u_log_3 shape: {u_log_3.shape}")
-
+    print(f"c_log_3 shape: {c_log_3.shape}")
 
     q_log_1 = np.array(q_log_1)
     v_log_1 = np.array(v_log_1)
     u_log_1 = np.array(u_log_1)
+    c_log_1 = np.array(c_log_1)
     q_log_2 = np.array(q_log_2)
     v_log_2 = np.array(v_log_2)
     u_log_2 = np.array(u_log_2)
+    c_log_2 = np.array(c_log_2)
     q_log_3 = np.array(q_log_3)
     v_log_3 = np.array(v_log_3)
     u_log_3 = np.array(u_log_3)
+    c_log_3 = np.array(c_log_3)
     
     q_err_1 = np.linalg.norm(q_log_1 - q_log_2)
     q_err_2 = np.linalg.norm(q_log_2 - q_log_3)
@@ -629,23 +649,29 @@ if __name__ == "__main__":
     u_err_1 = np.linalg.norm(u_log_1 - u_log_2)
     u_err_2 = np.linalg.norm(u_log_2 - u_log_3)
     u_err_3 = np.linalg.norm(u_log_1 - u_log_3)
+    c_err_1 = np.linalg.norm(c_log_1 - c_log_2)
+    c_err_2 = np.linalg.norm(c_log_2 - c_log_3)
+    c_err_3 = np.linalg.norm(c_log_1 - c_log_3)
 
     print(f"q_err_1: {q_err_1:.6e}, q_err_2: {q_err_2:.6e}, q_err_3: {q_err_3:.6e}")
     print(f"v_err_1: {v_err_1:.6e}, v_err_2: {v_err_2:.6e}, v_err_3: {v_err_3:.6e}")
     print(f"u_err_1: {u_err_1:.6e}, u_err_2: {u_err_2:.6e}, u_err_3: {u_err_3:.6e}")
+    print(f"c_err_1: {c_err_1:.6e}, c_err_2: {c_err_2:.6e}, c_err_3: {c_err_3:.6e}")
 
 
     # save the data
     q_log_np = np.array(q_log_1)
     v_log_np = np.array(v_log_1)
     u_log_np = np.array(u_log_1)
+    c_log_np = np.array(c_log_1)
 
     print(q_log_np.shape)
     print(v_log_np.shape)
     print(u_log_np.shape)
+    print(c_log_np.shape)
 
     # save the data
     robot_name = r.env.robot_name
     save_path = f"./data/{robot_name}_data.npz"
-    np.savez(save_path, q_traj=q_log_np, v_traj=v_log_np, u_traj=u_log_np)
+    np.savez(save_path, q_traj=q_log_np, v_traj=v_log_np, u_traj=u_log_np, c_traj=c_log_np)
     print(f"Saved data to: {save_path}")
