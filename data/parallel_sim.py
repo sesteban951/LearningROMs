@@ -106,6 +106,7 @@ class ParallelSim():
         self.u_lb = -jnp.ones((self.nu,), dtype=jnp.float32)  # lower bound is -1.0, shape (nu,)
         self.u_ub =  jnp.ones((self.nu,), dtype=jnp.float32)  # upper bound is  1.0, shape (nu,)
 
+    ######################################### INITIALIZATION #########################################
 
     # initialize model
     def initialize_model(self, model_path):
@@ -192,6 +193,8 @@ class ParallelSim():
                                                static_argnames=('T',),
                                                donate_argnums=(0, 1))
 
+
+    ######################################### SAMPLING #########################################
 
     # sample initial conditions
     def sample_random_uniform_initial_conditions(self):
@@ -479,6 +482,15 @@ class ParallelSim():
         u_log  = u_seq_batch                # shape (batch_size, T-1, nu)
 
         return q_log, v_log, u_log
+    
+    
+    ######################################### UTILS #########################################
+
+    # helper to log contact information
+    # def parse_contact(self, data_b):
+
+
+
 
 
 ##################################################################################

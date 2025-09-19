@@ -28,6 +28,38 @@ from envs.hopper_env import HopperEnv
 from envs.paddle_ball_env import PaddleBallEnv
 from algorithms.ppo_play import PPO_Play
 
+
+#################################################################
+
+# function to parse contact information
+def parse_contact(data):
+
+    # get the contact information
+    num_contacts = data.ncon
+
+    # contact boolean 
+    foot_in_contact = False
+
+    # either "torso" or "foot" in contact
+    if num_contacts > 0:
+
+        for i in range(num_contacts):
+
+            # get the contact id
+            contact_id = i
+
+            # get the geom ids
+            geom1_id = data.contact[contact_id].geom1
+            geom2_id = data.contact[contact_id].geom2
+
+            # get the geom names
+            geom1_name = mujoco.mj_id2name(data.model, mujoco.mjtObj.mjOBJ_GEOM, geom1_id)
+            geom2_name = mujoco.mj_id2name(data.model, mujoco.mjtObj.mjOBJ_GEOM, geom2_id)
+
+            print(f"Contact {i}: {geom1_name} - {geom2_name}")
+    
+    return foot_in_contact
+
 #################################################################
 
 if __name__ == "__main__":
@@ -44,12 +76,12 @@ if __name__ == "__main__":
 
     # Load the environment and policy parameters
     # env = envs.get_environment("biped")
-    env = envs.get_environment("biped_basic")
-    params_path = "./rl/policy/biped_policy_2025_09_14_10_38_14.pkl"
+    # env = envs.get_environment("biped_basic")
+    # params_path = "./rl/policy/biped_policy_2025_09_14_10_38_14.pkl"
 
     # Load the environment and policy parameters
-    # env = envs.get_environment("hopper")
-    # params_path = "./rl/policy/hopper_policy.pkl"
+    env = envs.get_environment("hopper")
+    params_path = "./rl/policy/hopper_policy.pkl"
 
     # Load the environment and policy parameters
     # env = envs.get_environment("paddle_ball")
@@ -105,10 +137,15 @@ if __name__ == "__main__":
             # get the current sim time and state
             t_sim = mj_data.time
 
+            print(f"Sim Time: {t_sim:.3f} s")
+
+            # parse contact information
+            contact = parse_contact(mj_data)
+
             # query controller at the desired rate
             if sim_step_counter % sim_steps_per_ctrl == 0:
 
-                print(f"Sim Time: {t_sim:.3f} s")
+                # print(f"Sim Time: {t_sim:.3f} s")
 
                 # get current state
                 qpos = jnp.array(mj_data.qpos)

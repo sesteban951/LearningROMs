@@ -12,7 +12,6 @@ import numpy as np
 # xml_file = "./models/cart_pole.xml"
 # xml_file = "./models/acrobot.xml"
 # xml_file = "./models/biped.xml"
-# xml_file = "./models/humanoid.xml"
 xml_file = "./models/paddle_ball.xml"
 # xml_file = "./models/hopper.xml"
 
@@ -20,7 +19,7 @@ xml_file = "./models/paddle_ball.xml"
 model =  mujoco.MjModel.from_xml_path(xml_file)
 data = mujoco.MjData(model)
 
-# set teh print precision
+# set the print precision
 np.set_printoptions(precision=4, suppress=True)
 
 # print some info about the model
