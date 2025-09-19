@@ -97,8 +97,8 @@ if __name__ == "__main__":
     # fom = DoubleIntegrator()
     # fom = Pendulum()
     # fom = VanDerPol()
-    fom = LorenzAttractor()
-    # fom = CartPole()
+    # fom = LorenzAttractor()
+    fom = CartPole()
 
     # create the ODE solver with the desired dynamics to integrate
     ode_solver = ODESolver(fom)
@@ -108,15 +108,15 @@ if __name__ == "__main__":
     #-----------------------------------------------------------
 
     # trajectory parameters
-    dt = 0.01     # time step
-    N = 300       # number of time steps to integrate
+    dt = 0.05   # time step
+    N = 20       # number of time steps to integrate
     sim_config = SimulationConfig(dt=dt, 
                                   N=N)
 
     # training parameters
-    num_steps = 2_000      # number of training steps
-    traj_batch_size = 128  # number of trajectories per batch
-    mini_batch_size = 128  # number of trajectories per mini-batch
+    num_steps = 5_000      # number of training steps
+    traj_batch_size = 1024  # number of trajectories per batch
+    mini_batch_size = 1024  # number of trajectories per mini-batch
     print_every = 50       # print every n steps
     training_config = TrainingConfig(num_steps=num_steps,
                                      batch_size=traj_batch_size,
@@ -124,11 +124,11 @@ if __name__ == "__main__":
                                      print_every=print_every)
 
     # loss function weights
-    learning_rate = 5e-4  # learning rate
-    lambda_rec = 0.5      # reconstruction loss weight
+    learning_rate = 1e-3  # learning rate
+    lambda_rec = 0.8      # reconstruction loss weight
     lambda_dyn = 0.5      # latent dynamics loss weight
-    lambda_roll = 0.0     # rollout loss weight
-    lambda_reg = 1e-4     # L2 regularization weight
+    lambda_roll = 0.01     # rollout loss weight
+    lambda_reg = 1e-3     # L2 regularization weight
     opt_config = OptimizerConfig(lambda_rec=lambda_rec,
                                  lambda_dyn=lambda_dyn,
                                  lambda_roll=lambda_roll,
@@ -136,7 +136,7 @@ if __name__ == "__main__":
                                  learning_rate=learning_rate)
     
     # autoencoder parameters
-    z_dim = 2          # latent space dimension
+    z_dim = 3          # latent space dimension
     f_hidden_dim = 32  # hidden layer size for dynamics model
     E_hidden_dim = 32  # hidden layer size for Encoder
     D_hidden_dim = 32  # hidden layer size for Decoder
