@@ -23,10 +23,6 @@ from rl.envs.hopper_env import HopperEnv
 from rl.envs.paddle_ball_env import PaddleBallEnv
 from rl.algorithms.ppo_play import PPO_Play
 
-#################################################################
-
-# decode the contact log
-# def decode_contact(c_log, )
 
 #################################################################
 
@@ -39,6 +35,11 @@ if __name__ == "__main__":
     env = envs.get_environment("hopper")
     config = env.config
     robot_name = env.robot_name
+
+    # load the mujoco model
+    model_path = config.model_path
+    mj_model = mujoco.MjModel.from_xml_path(model_path)
+    mj_data = mujoco.MjData(mj_model)
 
     # load the data
     file_name = f"./data/{robot_name}_data.npz"
@@ -77,10 +78,6 @@ if __name__ == "__main__":
     traj_idx = np.random.randint(batch_size)
 
     print(f"Playing back trajectory {traj_idx} of {batch_size}")
-
-    model_path = config.model_path
-    mj_model = mujoco.MjModel.from_xml_path(model_path)
-    mj_data = mujoco.MjData(mj_model)
 
     sim_dt = env.sys.opt.timestep
 
