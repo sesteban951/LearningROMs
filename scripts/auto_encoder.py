@@ -67,8 +67,8 @@ class AutoEncoder(nn.Module):
             zₜ = E(xₜ)
         """
         x = x_t
-        x = nn.relu(self.enc_fc1(x))
-        x = nn.relu(self.enc_fc2(x))
+        x = nn.tanh(self.enc_fc1(x))
+        x = nn.tanh(self.enc_fc2(x))
         z_t = self.enc_out(x)
         return z_t
 
@@ -79,8 +79,8 @@ class AutoEncoder(nn.Module):
             x̂ₜ = D(zₜ)
         """
         z = z_t
-        z = nn.relu(self.dec_fc1(z))
-        z = nn.relu(self.dec_fc2(z))
+        z = nn.tanh(self.dec_fc1(z))
+        z = nn.tanh(self.dec_fc2(z))
         x_t_hat = self.dec_out(z)
         return x_t_hat
     
@@ -91,8 +91,8 @@ class AutoEncoder(nn.Module):
             zₜ₊₁ = f_θ(zₜ)
         """
         z = z_t
-        z = nn.relu(self.dyn_fc1(z))
-        z = nn.relu(self.dyn_fc2(z))
+        z = nn.tanh(self.dyn_fc1(z))
+        z = nn.tanh(self.dyn_fc2(z))
         z_t1 = self.dyn_out(z)  # direct mapping
         return z_t1
 
@@ -103,8 +103,8 @@ class AutoEncoder(nn.Module):
             zₜ₊₁ = zₜ + r_θ(zₜ)
         """
         z = z_t
-        z = nn.relu(self.dyn_fc1(z))
-        z = nn.relu(self.dyn_fc2(z))
+        z = nn.tanh(self.dyn_fc1(z))
+        z = nn.tanh(self.dyn_fc2(z))
         dz = self.dyn_out(z)
         z_t1 = z_t + dz          # residual increment
         return z_t1

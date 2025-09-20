@@ -9,6 +9,9 @@ import functools
 # brax imports
 from brax.training.agents.ppo import train as ppo
 
+# flax imports
+import flax.linen as nn
+
 # for saving results
 import pickle
 
