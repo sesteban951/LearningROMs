@@ -5,7 +5,7 @@
 ##
 
 # python imports
-from typing import Sequence
+from typing import Sequence, Callable, Union
 
 # flax impports
 import flax.linen as nn
@@ -16,10 +16,8 @@ import jax
 import jax.numpy as jnp
 
 # brax imports
-from brax.envs.base import PipelineEnv
 from brax.training import distribution, networks, types
 from brax.training.acme import running_statistics
-from brax.training.agents.ppo import train as ppo
 from brax.training.agents.ppo.networks import PPONetworks, make_inference_fn
 from brax.training.types import Params
 
@@ -76,6 +74,74 @@ class MLP(nn.Module):
                 x = self.config.activation_fn(x)
 
         return x
+
+
+# RNN config
+@struct.dataclass
+class RNNConfig:
+    """
+    Configuration for recurrent neural networks (LSTM/GRU).
+    
+    Example: RNNConfig(
+        hidden_size=128,
+        num_layers=2,
+        cell_type="lstm",
+        activation_fn=nn.tanh
+    )
+    """
+
+    hidden_size: int                                # number of hidden units per recurrent layer
+    num_layers: int = 1                             # number of stacked recurrent layers
+    cell_type: str = "lstm"                         # "lstm" or "gru"
+    activation_fn: Callable = nn.tanh               # activation inside the cell
+    use_bias: bool = True                           # whether to use bias in recurrent cells
+
+
+# basic RNN
+class RNN(nn.Module):
+    """
+    Simple recurrent neural network wrapper (supports LSTM/GRU).
+    """
+    config: RNNConfig
+
+    @nn.compact
+    def __call__(self, x: jnp.ndarray, carry=None):
+        """
+        Args:
+            x: [batch, input_dim] or [batch, time, input_dim]
+            carry: optional tuple of hidden/cell states for LSTM/GRU
+        Returns:
+            outputs, carry
+        """
+        # If no carry is provided, initialize
+        if carry is None:
+            if self.config.cell_type.lower() == "lstm":
+                carry = nn.OptimizedLSTMCell.initialize_carry(
+                    self.make_rng("params"), 
+                    (x.shape[0],), self.config.hidden_size
+                )
+            elif self.config.cell_type.lower() == "gru":
+                carry = nn.GRUCell.initialize_carry(
+                    self.make_rng("params"), 
+                    (x.shape[0],), self.config.hidden_size
+                )
+            else:
+                raise ValueError(f"Unsupported cell type {self.config.cell_type}")
+
+        # Select cell type
+        if self.config.cell_type.lower() == "lstm":
+            Cell = nn.OptimizedLSTMCell
+        elif self.config.cell_type.lower() == "gru":
+            Cell = nn.GRUCell
+        else:
+            raise ValueError(f"Unsupported cell type {self.config.cell_type}")
+
+        # Stacked RNN layers
+        for i in range(self.config.num_layers):
+            cell = Cell(name=f"{self.config.cell_type}_layer_{i}")
+            carry, x = cell(carry, x)
+
+        return x, carry
 
 
 ##################################### WRAPPER #########################################
