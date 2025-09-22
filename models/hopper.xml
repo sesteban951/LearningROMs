@@ -21,14 +21,14 @@
         <light pos="-0.5 0.0 2.0" dir="0 0 -1" directional="true"/>  
 
         <!-- Ground -->
-        <geom name="ground" type="plane" size="0 0 0.01" material="groundplane"/>
+        <geom name="ground" type="plane" size="0 0 0.01" material="groundplane" contype="1" conaffinity="6"/>
 
         <!-- Body -->
         <body name="torso" pos="0 0 0.0">
             <joint name="px"    type="slide" axis="1 0 0"/>
             <joint name="pz"    type="slide" axis="0 0 1"/>
             <joint name="theta" type="hinge" axis="0 1 0"/>
-            <geom name="torso" type="sphere" size="0.1" rgba="1.0 0.424 0.047 1"/>
+            <geom name="torso" type="sphere" size="0.1" rgba="1.0 0.424 0.047 1" contype="2" conaffinity="1"/>
             <site name="torso_site" type="sphere" size="0.1" rgba="0 0 0 0"/>
             <geom name="upper_leg" type="cylinder" fromto="0 0 0 0 0 -0.5" size="0.04" rgba="0.4 0.4 0.4 0.5"/>
 
@@ -36,7 +36,7 @@
             <body name="lower_leg" pos="0 0 -0.5">
                 <joint name="leg" type="slide" axis="0 0 1" range="-0.25 0.25" springref="0.0" stiffness="2000.0" damping="50.0"/>
                 <geom name="lower_leg" type="cylinder" fromto="0 0 0.25 0 0 -0.25" size="0.03" rgba="0.8 0.8 0.8 0.5"/>
-                <geom name="foot" type="sphere" size="0.05" pos="0 0 -0.25" rgba="0.1 0.1 0.1 1"/>
+                <geom name="foot" type="sphere" size="0.05" pos="0 0 -0.25" rgba="0.1 0.1 0.1 1" contype="4" conaffinity="1"/>
                 <site name="foot_site" type="sphere" size="0.05" pos="0 0 -0.25" rgba="0 0 0 0"/>
             </body>
         </body>

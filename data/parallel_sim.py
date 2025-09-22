@@ -9,6 +9,7 @@ import os, sys
 import numpy as np
 import time
 from dataclasses import dataclass
+from functools import partial
 
 # jax imports
 import jax
@@ -33,6 +34,12 @@ from rl.envs.biped_basic_env import BipedBasicEnv
 from rl.envs.hopper_env import HopperEnv
 from rl.envs.paddle_ball_env import PaddleBallEnv
 from rl.algorithms.ppo_play import PPO_Play
+
+
+##################################################################################
+#AUXILLIARY FUNCTIONS
+##################################################################################
+
 
 
 ##################################################################################
@@ -77,7 +84,12 @@ class ParallelSim():
 
         # load the mujoco model for parallel sim
         model_path = env_config.model_path
-        self.initialize_model(model_path)
+        mj_model = mujoco.MjModel.from_xml_path(model_path)
+        mj_data = mujoco.MjData(mj_model)
+        self.initialize_model(mj_model, mj_data, model_path)
+
+        # load in the touch sensors if any
+        self.initialize_touch_sensors(mj_model)
 
         # policy and observation function
         if config.policy_params_path is not None:
@@ -100,7 +112,7 @@ class ParallelSim():
         )
 
         # zeros vector to use with zero input rollouts
-        self.u_zero = jnp.zeros((batch_size, self.nu), dtype=jnp.float32)  # (batch, nu) zeros
+        self.u_zero = jnp.zeros((self.batch_size, self.nu), dtype=jnp.float32)  # (batch, nu) zeros
 
         # sampling bounds. Should be [-1.0, 1.0] for all models beause of how XML is set up
         self.u_lb = -jnp.ones((self.nu,), dtype=jnp.float32)  # lower bound is -1.0, shape (nu,)
@@ -109,17 +121,14 @@ class ParallelSim():
     ######################################### INITIALIZATION #########################################
 
     # initialize model
-    def initialize_model(self, model_path):
+    def initialize_model(self, mj_model, mj_data, model_path):
         """
         Initialize the mujoco model and data for parallel rollout.
         
         Args:
-            model_path: str, path to the mujoco model xml file
+            mj_model: mujoco.MjModel, the mujoco model
+            mj_data: mujoco.MjData, the mujoco data
         """
-
-        # import the mujoco model
-        mj_model = mujoco.MjModel.from_xml_path(model_path)
-        mj_data = mujoco.MjData(mj_model)
 
         # put the model and data on GPU
         self.mjx_model = mjx.put_model(mj_model)
@@ -143,6 +152,22 @@ class ParallelSim():
         print(f"   nv: {self.nv}")
         print(f"   nu: {self.nu}")
 
+    # initialize touch sensors
+    def initialize_touch_sensors(self, mj_model):
+        """
+        Initialize touch sensors if any are present in the model.
+
+        Args:
+            mj_model: mujoco.MjModel, the mujoco model
+        """
+        
+        # cache touch sensor IDs
+        self.touch_sensor_ids = [
+            i for i, stype in enumerate(mj_model.sensor_type)
+            if stype == mujoco.mjtSensor.mjSENS_TOUCH
+        ]
+        self.nc = len(self.touch_sensor_ids)
+        print(f"Found {self.nc} touch sensors: {self.touch_sensor_ids}")
 
     # initialize the policy and observation functions
     def initialize_policy_and_obs_fn(self, policy_params_path):
@@ -357,7 +382,7 @@ class ParallelSim():
             q_log: jnp.array, logged positions (batch_size, T, nq)
             v_log: jnp.array, logged velocities (batch_size, T, nv)
             u_log: jnp.array, logged inputs (batch_size, T-1, nu)
-            c_log: jnp.array, logged contact pairs (batch_size, T, nconmax, 2)
+            c_log: jnp.array, logged contact pairs (batch_size, T, nc)
         """
 
         # number of integration steps
@@ -400,17 +425,17 @@ class ParallelSim():
 
         # add the initial condition to the logs
         q0 = data_0.qpos   # initial q
-        v0 = data_0.qvel   # initial v
-        c0 = self.parse_contact(data_0)  # initial contact pairs
-        q_log = jnp.concatenate((q0[None, :, :], q_log), axis=0)  # shape (T, batch_size, nq)
-        v_log = jnp.concatenate((v0[None, :, :], v_log), axis=0)  # shape (T, batch_size, nv)
-        c_log = jnp.concatenate((c0[None, :, :, :], c_log), axis=0)  # shape (T, batch_size, nconmax, 2)
+        v0 = data_0.qvel   # initial v 
+        c0 = self.parse_contact(data_0)  # (batch_size, nc)
+        q_log = jnp.concatenate((q0[None, :, :], q_log), axis=0)     # shape (T, batch_size, nq)
+        v_log = jnp.concatenate((v0[None, :, :], v_log), axis=0)     # shape (T, batch_size, nv)
+        c_log = jnp.concatenate((c0[None, ...], c_log), axis=0)  # (T, batch_size, nc)
 
         # swap axis to get (batch, T, dim)
         q_log  = jnp.swapaxes(q_log, 0, 1)  # shape (batch_size, T, nq)
         v_log  = jnp.swapaxes(v_log, 0, 1)  # shape (batch_size, T, nv)
         u_log  = jnp.swapaxes(u_log, 0, 1)  # shape (batch_size, T-1, nu)
-        c_log  = jnp.swapaxes(c_log, 0, 1)  # shape (batch_size, T, nconmax, 2)
+        c_log = jnp.swapaxes(c_log, 0, 1)  # (batch_size, T, nc)
 
         return q_log, v_log, u_log, c_log
 
@@ -493,34 +518,25 @@ class ParallelSim():
     
     ######################################### UTILS #########################################
 
-    # helper to log contact information
-    def parse_contact(self, data_b):
+    def parse_contact(self, data_batch):
         """
-        Extract contact pairs from batched mjx data.
+        Extract touch sensor values for a batch of mjx.Data.
 
         Args:
-            data_b: mjx.MjData, batched mjx data
+            data_batch: mjx.Data, batched mjx data (batch_size, ...)
+
         Returns:
-            contact_pairs: jnp.array, contact pairs (batch, nconmax, 2)
-                           Each entry is (geom1_id, geom2_id), unused slots padded with -1.
+            jnp.ndarray, shape (batch_size, nc)
+            Contact forces at each touch sensor site.
         """
-
-        # contacts are stored in fixed-length buffers
-        ncon = data_b._impl.ncon          # (batch,), number of contact pairs active
-        ncon = jnp.atleast_1d(ncon)       # ensure shape (batch,)
-        g1 = data_b._impl.contact.geom1   # (batch, nconmax)
-        g2 = data_b._impl.contact.geom2   # (batch, nconmax)
-
-        # stack into (batch, nconmax, 2)
-        pairs = jnp.stack([g1, g2], axis=-1)
-
-        # mask out inactive contacts
-        mask = jnp.arange(pairs.shape[1])[None, :] < ncon[:, None]
-        pairs = jnp.where(mask[..., None], pairs, -jnp.ones_like(pairs)) 
-
-        return pairs
-    
-
+        if self.nc == 0:
+            # no touch sensors defined
+            return jnp.zeros((self.batch_size, 0), dtype=jnp.float32)
+        
+        # data_batch.sensordata has shape (batch_size, nsensor)
+        return data_batch.sensordata[:, self.touch_sensor_ids]
+       
+        
 ##################################################################################
 # EXAMPLE USAGE
 ##################################################################################
@@ -673,5 +689,5 @@ if __name__ == "__main__":
     # save the data
     robot_name = r.env.robot_name
     save_path = f"./data/{robot_name}_data.npz"
-    np.savez(save_path, q_traj=q_log_np, v_traj=v_log_np, u_traj=u_log_np, c_traj=c_log_np)
+    np.savez(save_path, q_log=q_log_np, v_log=v_log_np, u_log=u_log_np, c_log=c_log_np)
     print(f"Saved data to: {save_path}")
