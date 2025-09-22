@@ -33,6 +33,10 @@ class Controller:
         self.upper_body_mass = model.body_mass[upper_body_id]
         self.lower_body_mass = model.body_mass[lower_body_id]
 
+        # cache sensor IDs
+        self.sid_foot  = model.sensor("foot_touch").id
+        self.sid_torso = model.sensor("torso_touch").id
+
         # extract the joint stiffness and damping
         self.k_leg = model.jnt_stiffness[leg_joint_id]
         self.b_leg = model.dof_damping[leg_joint_id]
@@ -75,7 +79,7 @@ class Controller:
         thetadot_body = v[self.idx.VEL.ANG_Y]
 
         # parse contact information
-        foot_in_contact = self.parse_contact(data)
+        foot_in_contact, torso_in_contact = self.parse_contact(data)
         
         # Ground
         if foot_in_contact:
@@ -141,40 +145,18 @@ class Controller:
         
         return tau
     
-    # function to parse contact information
+    # parse contact information
     def parse_contact(self, data):
 
-        # get the contact information
-        num_contacts = data.ncon
+        # read the sensor values
+        foot_force  = data.sensordata[self.sid_foot]
+        torso_force = data.sensordata[self.sid_torso]
 
-        # contact boolean 
-        foot_in_contact = False
+        # thresholds avoid noise
+        foot_in_contact  = foot_force  > 1e-6
+        torso_in_contact = torso_force > 1e-6
 
-        # either "torso" or "foot" in contact
-        if num_contacts > 0:
-
-            for i in range(num_contacts):
-
-                # get the contact id
-                contact_id = i
-
-                # get the geom ids
-                geom1_id = data.contact[contact_id].geom1
-                geom2_id = data.contact[contact_id].geom2
-
-                # get the geom names
-                geom1_name = mujoco.mj_id2name(data.model, mujoco.mjtObj.mjOBJ_GEOM, geom1_id)
-                geom2_name = mujoco.mj_id2name(data.model, mujoco.mjtObj.mjOBJ_GEOM, geom2_id)
-
-                # check if the foot is in contact
-                if (geom1_name == "foot") or (geom2_name == "foot"):
-                    
-                    # set the flag
-                    foot_in_contact = True
-
-                    break
-        
-        return foot_in_contact
+        return foot_in_contact, torso_in_contact
         
     
 ##################################################################################
