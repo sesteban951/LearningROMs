@@ -19,7 +19,7 @@ class BipedBasicConfig:
     model_path: str = "./models/biped.xml"
 
     # number of "simulation steps" for every control input
-    physics_steps_per_control_step: int = 8
+    physics_steps_per_control_step: int = 4
 
     # Reward function coefficients
     reward_com_height: float = 2.0   # center of mass height target
