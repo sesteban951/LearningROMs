@@ -19,12 +19,12 @@ class PaddleBallConfig:
     model_path: str = "./models/paddle_ball.xml"
 
     # number of "simulation steps" for every control input
-    physics_steps_per_control_step: int = 2
+    physics_steps_per_control_step: int = 4
 
     # Reward function coefficients
     reward_ball_pos: float = 2.0
-    reward_ball_vel: float = 0.05
-    reward_paddle_pos: float = 1.0
+    reward_ball_vel: float = 0.01
+    reward_paddle_pos: float = 2.0
     reward_paddle_vel: float = 0.01
     reward_control: float = 1e-4
 
@@ -157,7 +157,7 @@ class PaddleBallEnv(PipelineEnv):
 
         # desired position of the ball and paddle
         des_ball_pos = 1.5
-        des_paddle_pos = 0.25
+        des_paddle_pos = 0.5
 
         # compute error terms
         ball_pos_err = jnp.square(ball_pos - des_ball_pos).sum()

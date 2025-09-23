@@ -570,19 +570,19 @@ if __name__ == "__main__":
     # v_lb = jnp.array([-3.0, -3.0])  
     # v_ub = jnp.array([ 3.0,  3.0])
 
-    # env_name = "paddle_ball"
-    # params_path = "./rl/policy/paddle_ball_policy.pkl"
-    # q_lb = jnp.array([ 1.0,  0.1]) # paddle ball
-    # q_ub = jnp.array([ 3.0,  0.9])
-    # v_lb = jnp.array([-5.0, -5.0])
-    # v_ub = jnp.array([ 5.0,  5.0])
+    env_name = "paddle_ball"
+    params_path = "./rl/policy/paddle_ball_policy.pkl"
+    q_lb = jnp.array([ 1.0,  0.1]) # paddle ball
+    q_ub = jnp.array([ 3.0,  0.9])
+    v_lb = jnp.array([-5.0, -5.0])
+    v_ub = jnp.array([ 5.0,  5.0])
 
-    env_name = "hopper"
-    params_path = "./rl/policy/hopper_policy_2025_09_22_18_38_41.pkl"
-    q_lb = jnp.array([-0.001, 1.0, -jnp.pi, -0.3])  # hopper
-    q_ub = jnp.array([ 0.001, 1.5,  jnp.pi,  0.3])  
-    v_lb = jnp.array([-2.0, -2.0, -3.0, -5.0])
-    v_ub = jnp.array([ 2.0,  2.0,  3.0,  5.0])
+    # env_name = "hopper"
+    # params_path = "./rl/policy/hopper_policy_2025_09_22_18_38_41.pkl"
+    # q_lb = jnp.array([-0.001, 1.0, -jnp.pi, -0.3])  # hopper
+    # q_ub = jnp.array([ 0.001, 1.5,  jnp.pi,  0.3])  
+    # v_lb = jnp.array([-2.0, -2.0, -3.0, -5.0])
+    # v_ub = jnp.array([ 2.0,  2.0,  3.0,  5.0])
 
     # assign the state bounds
     state_bounds = (q_lb, q_ub, v_lb, v_ub)
