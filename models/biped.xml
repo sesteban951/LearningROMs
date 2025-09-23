@@ -2,7 +2,7 @@
 <mujoco model="biped">
 
 	<!-- Simulation Parameters -->
-	<option timestep="0.0025" iterations="15" ls_iterations="5" solver="Newton">
+	<option solver="Newton" integrator="RK4" timestep="0.005" iterations="20" ls_iterations="20" cone="elliptic">
 		<flag eulerdamp="disable"/>
 	</option>
 
@@ -20,6 +20,9 @@
         <material name="groundplane" texture="groundplane" texuniform="true" texrepeat="5 5" reflectance="0.2"/>
     </asset>
 
+    <!-- Memory settings (default is 1000) -->
+    <size nstack="3000" />
+
 	<!-- Robot -->
 	<worldbody>
 
@@ -31,7 +34,6 @@
 	
         <!-- Torso -->
         <body name="torso" pos="0 0 0">
-            <!-- <inertial pos="0 0 0.25" mass="4.0" diaginertia="0.5 0.5 0.5"/> -->
             <geom name="torso" type="capsule" size="0.045 0.25" pos="0 0 0.25" density="2000" rgba="0.9 0.9 0.9 0.5" conaffinity="1" contype="1"/> 
             <joint name="torso_x" type="slide" axis="1 0 0"/>
             <joint name="torso_z" type="slide" axis="0 0 1"/>
@@ -68,8 +70,8 @@
         </body>
 	</worldbody>
 
+    <!-- Sensors -->
     <sensor>
-        <!-- For contact sensing -->
         <touch name="left_foot_touch"  site="left_foot_site"/>
         <touch name="right_foot_touch" site="right_foot_site"/>
     </sensor>
