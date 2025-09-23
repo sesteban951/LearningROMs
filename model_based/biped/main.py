@@ -20,6 +20,7 @@ class Controller:
         # load the model file
         model = mujoco.MjModel.from_xml_path(model_file)
         self.model = model
+        sim_dt = model.opt.timestep
 
         # create indexing object
         self.idx = Biped_IDX()
@@ -31,7 +32,7 @@ class Controller:
         self.ik = InverseKinematics(model_file)
 
         # gains (NOTE: these does not take gear reduction into account)
-        self.kp = np.array([150.0, 150.0, 150.0, 150.0])
+        self.kp = np.array([200.0, 200.0, 200.0, 200.0])
         self.kd = np.array([5.0, 5.0, 5.0, 5.0])
 
         # get foot locations
@@ -101,7 +102,7 @@ class Controller:
         self.Kd_raibert = 0.2
 
         # max step increment
-        self.u_max = 0.3
+        self.u_max = 0.4
 
         # feedforward bias input for stepping
         self.u_bias = -0.035
@@ -113,9 +114,13 @@ class Controller:
         # velocity command parameters
         self.vx_cmd_scale = 0.4    # m/s per unit joystick command
         self.vx_cmd = 0.0          # desired forward velocity (used with joystick if connected)
+        
+        # low pass filter
+        f_cutoff = 0.3
+        omega_c = 2.0 * np.pi * f_cutoff
+        self.vx_cmd_alpha = np.exp(-omega_c * sim_dt)
         self.vx_cmd_prev = 0.0    
         self.vx_cmd_curr = 0.0    
-        self.vx_cmd_alpha = 0.01   # low-pass filter, (very low b/c fast control loop)
 
     # update internal state and time
     def update_state(self, data):
@@ -222,8 +227,8 @@ class Controller:
             self.vx_cmd_curr = self.vx_cmd_scale * vx_cmd_raw
 
             # low-pass filter
-            self.vx_cmd = (  self.vx_cmd_alpha * self.vx_cmd_curr 
-                           + (1.0 - self.vx_cmd_alpha) * self.vx_cmd_prev)
+            self.vx_cmd = (  (1.0 - self.vx_cmd_alpha) * self.vx_cmd_curr 
+                           + self.vx_cmd_alpha* self.vx_cmd_prev)
             self.vx_cmd_prev = self.vx_cmd
 
             # deadband
