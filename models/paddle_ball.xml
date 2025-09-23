@@ -1,7 +1,7 @@
 <mujoco model="paddle_ball">
 
     <!-- Simulation settings, NOTE: the timestep seemed to make a huge difference -->
-    <option solver="Newton" integrator="RK4" timestep="0.01" iterations="20" ls_iterations="20" cone="elliptic"/>
+    <option solver="Newton" integrator="RK4" timestep="0.005" iterations="20" ls_iterations="20" cone="elliptic"/>
 
     <!-- Inertia is computed from geometry -->
     <compiler inertiafromgeom="true" />
@@ -29,21 +29,35 @@
         <light pos="-0.5 0.0 2.0" dir="0 0 -1" directional="true"/>  
 
         <!-- Ground -->
-        <geom name="ground" type="plane" size="0 0 0.01" material="groundplane"/>
+        <geom name="ground" type="plane" size="0 0 0.01" material="groundplane" contype="1" conaffinity="6"/>
 
         <!-- Ball -->
         <body name="ball" pos="0 0 0">
-            <joint name="ball_slide" type="slide" axis="0 0 1" range="0.05 10.0" damping="0.05"/>
-            <geom name="ball" type="sphere" size="0.05" rgba="1.0 0.424 0.047 1"/>
+            <joint name="ball_slide" type="slide" axis="0 0 1" damping="0.05"/>
+            <geom name="ball" type="sphere" size="0.05" rgba="1.0 0.424 0.047 1" contype="2" conaffinity="5"/>
+            <site name="ball_site" size="0.051" type="sphere" rgba="0 0 0 0"/>
         </body>
 
         <!-- Paddle -->
         <body name="paddle" pos="0 0 0">
-            <joint name="paddle_slide" type="slide" axis="0 0 1" range="0.01 1.0" damping="0.05"/>
-            <geom name="paddle" type="cylinder" size="0.15 0.015" rgba="0.2 0.2 0.2 1"/>
+            <joint name="paddle_slide" type="slide" axis="0 0 1" damping="0.05"/>
+            <geom name="paddle" type="cylinder" size="0.15 0.030" rgba="0.2 0.2 0.2 1" contype="4" conaffinity="3"/>
+            <site name="paddle_site" type="sphere" size="0.031" rgba="0 0 0 0"/>
         </body>
 
     </worldbody>
+
+    <!-- Sensors -->
+    <sensor>
+        <!-- Ball vs Paddle -->
+        <touch name="ball_paddle_touch" site="ball_site"/>
+
+        <!-- Ball vs Ground -->
+        <touch name="ball_ground_touch" site="ball_site"/>
+
+        <!-- Paddle vs Ground -->
+        <touch name="paddle_ground_touch" site="paddle_site"/>
+    </sensor>
 
     <!-- Actuators -->
     <actuator>
