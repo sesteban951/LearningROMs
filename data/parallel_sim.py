@@ -578,7 +578,7 @@ if __name__ == "__main__":
     # v_ub = jnp.array([ 5.0,  5.0])
 
     env_name = "hopper"
-    params_path = "./rl/policy/hopper_policy.pkl"
+    params_path = "./rl/policy/hopper_policy_2025_09_22_18_38_41.pkl"
     q_lb = jnp.array([-0.001, 1.0, -jnp.pi, -0.3])  # hopper
     q_ub = jnp.array([ 0.001, 1.5,  jnp.pi,  0.3])  
     v_lb = jnp.array([-2.0, -2.0, -3.0, -5.0])

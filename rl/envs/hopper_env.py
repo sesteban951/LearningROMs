@@ -19,7 +19,7 @@ class HopperConfig:
     model_path: str = "./models/hopper.xml"
 
     # number of "simulation steps" for every control input
-    physics_steps_per_control_step: int = 2
+    physics_steps_per_control_step: int = 4
 
     # Reward function coefficients
     reward_torso_height: float = 4.0   # reward for torso height
@@ -30,6 +30,10 @@ class HopperConfig:
     reward_torso_vel_angle: float = 0.01      # reward for zero velocity
     reward_leg_vel: float = 0.001        # reward for zero leg velocity
     reward_control: float = 1e-4       # cost for control effort
+
+    # desired values
+    desired_pos_z: float = 2.0  # desired torso height, achieved by hopping
+    desired_vel_x: float = 1.0  # desired forward velocity
 
     # Ranges for sampling initial conditions
     lb_torso_height: float = 1.0
@@ -46,7 +50,6 @@ class HopperConfig:
     ub_leg_pos: float =  0.25
     lb_leg_vel: float = -5.0
     ub_leg_vel: float =  5.0
-
 
 # environment class
 class HopperEnv(PipelineEnv):
@@ -172,15 +175,11 @@ class HopperEnv(PipelineEnv):
         sin_theta = jnp.sin(theta)
         theta_angle_vec = jnp.array([cos_theta - 1.0, sin_theta]) # want (0, 0)
 
-        # desired values
-        desired_pos_z = 2.0
-        desired_vel_x = 1.0
-
         # compute error terms
-        torso_height_err = jnp.square(pos_z - desired_pos_z).sum()
+        torso_height_err = jnp.square(pos_z - self.config.desired_pos_z).sum()
         torso_angle_err = jnp.square(theta_angle_vec).sum()
         leg_pos_err = jnp.square(leg_pos).sum()
-        torso_vel_x_err = jnp.square(vel_x - desired_vel_x).sum()
+        torso_vel_x_err = jnp.square(vel_x - self.config.desired_vel_x).sum()
         torso_vel_z_err = jnp.square(vel_z).sum()
         torso_vel_angle_err = jnp.square(theta_dot).sum()
         leg_vel_err = jnp.square(leg_vel).sum()
