@@ -83,9 +83,9 @@ if __name__ == "__main__":
     # params_path = "./rl/policy/hopper_policy.pkl"
 
     # Load the environment and policy parameters
-    env = envs.get_environment("biped")
-    # env = envs.get_environment("biped_basic")
-    params_path = "./rl/policy/biped_policy_2025_09_23_21_13_14.pkl"
+    # env = envs.get_environment("biped")
+    # # env = envs.get_environment("biped_basic")
+    # params_path = "./rl/policy/biped_policy_2025_09_24_15_31_07.pkl"
 
     #----------------------- POLICY SETUP -----------------------#
 
@@ -123,6 +123,8 @@ if __name__ == "__main__":
     wall_start = time.time()
     last_render = 0.0
 
+    act = np.zeros(mj_model.nu)
+
     # start the interactive simulation
     with mujoco.viewer.launch_passive(mj_model, mj_data) as viewer:
 
@@ -145,7 +147,7 @@ if __name__ == "__main__":
             # query controller at the desired rate
             if sim_step_counter % sim_steps_per_ctrl == 0:
 
-                # print(f"Sim Time: {t_sim:.3f} s")
+                print(f"Sim Time: {t_sim:.3f} s")
 
                 # get current state
                 qpos = jnp.array(mj_data.qpos)
@@ -155,6 +157,7 @@ if __name__ == "__main__":
                 mjx_data = mjx_data.replace(qpos=qpos, qvel=qvel)
 
                 # compute the observation
+                # obs = obs_fn(mjx_data, act)   # obs is a jax array
                 obs = obs_fn(mjx_data)   # obs is a jax array
 
                 # compute the action

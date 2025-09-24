@@ -22,19 +22,23 @@ class BipedConfig:
     physics_steps_per_control_step: int = 4
 
     # Reward function coefficients
-    reward_com_height: float = 0.0   # center of mass height target
-    reward_orientation: float = 1.0  # torso orientation target
-    reward_joint_pos: float = 0.5   # joint position target
-    reward_joint_vel: float = 0.05    # joint position target
-    reward_forward: float = 1.0      # forward velocity target
-    reward_contact: float = 0.5      # foot contact reward
-    reward_control: float = 1e-4     # control cost
-    reward_alive: float = 1.0        # alive reward bonus (if not terminated)
+    reward_base_pos_z: float = 10.0    # target base height
+    reward_base_vel_x: float = 1.0     # forward velocity target
+    reward_base_vel_z: float = 2.0     # target base height
+    reward_base_ang_pos: float = 1.0   # torso orientation target
+    reward_base_ang_vel: float = 0.5   # torso angular velocity target
+    reward_joint_pos: float = 1.0      # joint position 
+    reward_joint_vel: float = 1e-3     # joint velocity 
+    reward_joint_acc: float = 2.5e-7   # joint acceleration
+    reward_action_rate: float = 0.01   # control cost
+    reward_contact: float = 0.18       # foot contact reward
+    reward_alive: float = 0.15         # alive reward bonus (if not terminated)
 
     # desired values
-    com_des: float = 0.7     # desired center of mass height
-    vel_des: float = 0.75    # desired forward velocity
-    theta_des: float = -0.1  # desired torso lean angle
+    base_pos_z_des: float = 0.8  # desired center of mass height
+    base_vel_x_des: float = 1.0   # desired forward velocity
+    theta_des: float = 0.0   # desired torso lean angle
+    hip_des: float = 0.22     # desired hip joint angle
 
     # phase parameters (inspired by unitree_rl_gym)
     T_phase = 0.8           # total period of the gait cycle
@@ -42,23 +46,23 @@ class BipedConfig:
     phase_threshold = 0.55  # percent threshold that defines stance. leg_phase < 0.55 means
 
     # termination conditions
-    min_com_height: float = 0.5      # terminate if falls below this height
+    min_base_height: float = 0.5     # terminate if falls below this height
     max_base_pitch: float = 1.5      # terminate if base pitch exceeds this value
     min_steps_before_done: int = 5   # tiny grace period after reset
 
     # Ranges for sampling initial conditions
-    lb_base_theta_pos: float = -jnp.pi / 3.0  # base theta pos limits
-    ub_base_theta_pos: float =  jnp.pi / 3.0
-    lb_base_cart_vel: float = -1.0     # base cart vel limits
-    ub_base_cart_vel: float =  1.0
-    lb_base_theta_vel: float = -1.0    # base theta vel limits
-    ub_base_theta_vel: float =  1.0
-    lb_hip_joint_pos: float =  (-jnp.pi / 2.0) * 0.8  # hip joint pos limits
-    ub_hip_joint_pos: float =  ( jnp.pi / 2.0) * 0.8
-    lb_knee_joint_pos: float = (-2.4) * 0.8    # knee joint pos limits
+    lb_base_theta_pos: float = -jnp.pi / 6.0  # base theta pos limits
+    ub_base_theta_pos: float =  jnp.pi / 6.0
+    lb_base_cart_vel: float = -0.1     # base cart vel limits
+    ub_base_cart_vel: float =  0.1
+    lb_base_theta_vel: float = -0.25    # base theta vel limits
+    ub_base_theta_vel: float =  0.25
+    lb_hip_joint_pos: float =  (-jnp.pi / 2.0) * 0.2  # hip joint pos limits
+    ub_hip_joint_pos: float =  ( jnp.pi / 2.0) * 0.2
+    lb_knee_joint_pos: float = (-2.4) * 0.1    # knee joint pos limits
     ub_knee_joint_pos: float =  0.0
-    lb_joint_vel: float = -1.0         # joint vel limits
-    ub_joint_vel: float =  1.0
+    lb_joint_vel: float = -0.25     # joint vel limits
+    ub_joint_vel: float =  0.25
 
 # environment class
 class BipedEnv(PipelineEnv):
@@ -137,7 +141,7 @@ class BipedEnv(PipelineEnv):
                               self.config.lb_knee_joint_pos,
                               self.config.lb_hip_joint_pos,
                               self.config.lb_knee_joint_pos])
-        q_pos_ub = jnp.array([0.01, 0.9,
+        q_pos_ub = jnp.array([0.01, 0.85,
                               self.config.ub_base_theta_pos,
                               self.config.ub_hip_joint_pos,
                               self.config.ub_knee_joint_pos,
@@ -163,27 +167,33 @@ class BipedEnv(PipelineEnv):
         # reset the physics state
         data = self.pipeline_init(qpos, qvel)
 
-        # reset the observation
-        # action  = jnp.zeros(self.action_size)  # assume zero initial action
-        obs = self._compute_obs(data)
+        # MODIFIED: initialize with zero previous action
+        prev_action = jnp.zeros(self.action_size)
+
+        # reset the observation (now includes previous action)
+        obs = self._compute_obs(data, prev_action)
 
         # reset reward
         reward, done = jnp.zeros(2)
 
         # reset the metrics
-        metrics = {"reward_com_height": 0.0,
-                   "reward_forward": 0.0,
-                   "reward_orientation": 0.0,
+        metrics = {"reward_base_pos_z": 0.0,
+                   "reward_base_vel_x": 0.0,
+                   "reward_base_vel_z": 0.0,
+                   "reward_base_ang_pos": 0.0,
+                   "reward_base_ang_vel": 0.0,
                    "reward_joint_pos": 0.0,
-                #    "reward_joint_vel": 0.0,
+                   "reward_joint_vel": 0.0,
+                   "reward_joint_acc": 0.0,
+                   "reward_action_rate": 0.0,
                    "reward_contact": 0.0,
-                   "reward_control": 0.0,
                    "reward_alive": 0.0
                    }
 
-        # state info
+        # state info - MODIFIED: store previous action
         info = {"rng": rng,
-                "step": 0}
+                "step": 0,
+                "prev_action": prev_action}
         
         return State(pipeline_state=data,
                      obs=obs,
@@ -208,24 +218,31 @@ class BipedEnv(PipelineEnv):
         data0 = state.pipeline_state
         data  = self.pipeline_step(data0, action)
 
-        # update the observations
-        obs = self._compute_obs(data)
+        # MODIFIED: get previous action from state
+        prev_action = state.info["prev_action"]
+
+        # update the observations (now includes current action)
+        obs = self._compute_obs(data, action)
 
         # extract data
-        com_pos0 = data0.subtree_com[1]
-        com_pos  = data.subtree_com[1]
-        com_vel = (com_pos[0] - com_pos0[0]) / self.dt
-        base_theta = data.qpos[2]
-        cos_theta = jnp.cos(base_theta)
-        sin_theta = jnp.sin(base_theta)
-        joint_pos = data.qpos[3:]
-        # joint_vel = data.qvel[3:]
+        base_pos_z = data.qpos[1]
+        base_vel_x = data.qvel[0]
+        base_vel_z = data.qvel[1]
+        base_ang_pos = data.qpos[2]
+        base_ang_vel = data.qvel[2]
+        cos_theta = jnp.cos(base_ang_pos)
+        sin_theta = jnp.sin(base_ang_pos)
+        
+        joint_hip_left = data.qpos[3]
+        joint_hip_right = data.qpos[5]
+        joint_vel = data.qvel[3:]
+        joint_acc = data.qacc[3:]
 
         # special angle error
         cos_theta_des = jnp.cos(self.config.theta_des)
         sin_theta_des = jnp.sin(self.config.theta_des)
-        base_theta_vec = jnp.array([cos_theta - cos_theta_des,
-                                    sin_theta - sin_theta_des])
+        base_ang_pos_vec = jnp.array([cos_theta - cos_theta_des,
+                                      sin_theta - sin_theta_des])
         
         # special foot contact error
         _, _, left_phase, right_phase = self._compute_phase(data.time)
@@ -236,26 +253,34 @@ class BipedEnv(PipelineEnv):
         right_match = jnp.logical_not(jnp.logical_xor(right_in_contact.astype(bool), right_should_be_in_stance))
 
         # compute errors
-        com_pos_err  = jnp.abs(com_pos[2] - self.config.com_des)
-        com_vel_err = jnp.square(com_vel - self.config.vel_des)
-        base_theta_err = jnp.square(base_theta_vec).sum()
-        joint_pos_err = jnp.square(joint_pos - self.q_joints_stand).sum()
-        # joint_vel_err = jnp.square(joint_vel).sum()
-        tau_err = jnp.square(data.ctrl).sum()
+        base_pos_z_err = jnp.square(base_pos_z - self.config.base_pos_z_des).sum()
+        base_vel_x_err = jnp.square(base_vel_x - self.config.base_vel_x_des).sum()
+        base_vel_z_err = jnp.square(base_vel_z).sum()
+        base_ang_pos_err = jnp.square(base_ang_pos_vec).sum()
+        base_ang_vel_err = jnp.square(base_ang_vel).sum()
+        joint_pos_err = jnp.square(joint_hip_left - self.config.hip_des).sum() + jnp.square(joint_hip_right - self.config.hip_des).sum()
+        joint_vel_err = jnp.square(joint_vel).sum()
+        joint_acc_err = jnp.square(joint_acc).sum()
+
+        # ADDED: action rate error (difference from previous action)
+        action_rate_err = jnp.square(action - prev_action).sum()
 
         # compute the reward terms
-        reward_com_height = -self.config.reward_com_height * com_pos_err
-        reward_forward = -self.config.reward_forward * com_vel_err
-        reward_orientation = -self.config.reward_orientation * base_theta_err
+        reward_base_pos_z = -self.config.reward_base_pos_z * base_pos_z_err
+        reward_base_vel_x = -self.config.reward_base_vel_x * base_vel_x_err
+        reward_base_vel_z = -self.config.reward_base_vel_z * base_vel_z_err
+        reward_base_ang_pos = -self.config.reward_base_ang_pos * base_ang_pos_err
+        reward_base_ang_vel = -self.config.reward_base_ang_vel * base_ang_vel_err
         reward_joint_pos = -self.config.reward_joint_pos * joint_pos_err
-        # reward_joint_vel = -self.config.reward_joint_vel * joint_vel_err
-        reward_control = -self.config.reward_control * tau_err
+        reward_joint_vel = -self.config.reward_joint_vel * joint_vel_err
+        reward_joint_acc = -self.config.reward_joint_acc * joint_acc_err
+        reward_action_rate = -self.config.reward_action_rate * action_rate_err  # ADDED
         reward_contact = (left_match.astype(jnp.float32) +
                           right_match.astype(jnp.float32)) * self.config.reward_contact / 2.0
 
         # termination conditions
-        below_height = com_pos[2] < self.config.min_com_height
-        tilted_over = jnp.abs(base_theta) > self.config.max_base_pitch
+        below_height = base_pos_z < self.config.min_base_height
+        tilted_over = jnp.abs(base_ang_pos) > self.config.max_base_pitch
 
         # small grace window to avoid instant termination on the first few frames after reset
         after_grace_period = state.info["step"] >= self.config.min_steps_before_done
@@ -266,23 +291,29 @@ class BipedEnv(PipelineEnv):
         # if not terminated, give a small alive bonus
         reward_alive = self.config.reward_alive * (1.0 - done)
 
-        # compute the total reward
-        reward = (reward_com_height + reward_forward   + reward_orientation +
-                  reward_joint_pos  + 
-                #   reward_joint_vel +
-                  reward_contact    +
-                  reward_control    + reward_alive)
+        # MODIFIED: compute the total reward (now includes action rate)
+        reward = (reward_base_pos_z +
+                  reward_base_vel_x   + reward_base_vel_z +
+                  reward_base_ang_pos + reward_base_ang_vel +
+                  reward_joint_pos + reward_joint_vel + reward_joint_acc +
+                  reward_action_rate   +  # ADDED
+                  reward_contact   + reward_alive)
 
         # update the metrics and info dictionaries
-        state.metrics["reward_com_height"] = reward_com_height
-        state.metrics["reward_forward"] = reward_forward
-        state.metrics["reward_orientation"] = reward_orientation
+        state.metrics["reward_base_pos_z"] = reward_base_pos_z
+        state.metrics["reward_base_vel_x"] = reward_base_vel_x
+        state.metrics["reward_base_vel_z"] = reward_base_vel_z
+        state.metrics["reward_base_ang_pos"] = reward_base_ang_pos
+        state.metrics["reward_base_ang_vel"] = reward_base_ang_vel
         state.metrics["reward_joint_pos"] = reward_joint_pos
-        # state.metrics["reward_joint_vel"] = reward_joint_vel
+        state.metrics["reward_joint_vel"] = reward_joint_vel
+        state.metrics["reward_joint_acc"] = reward_joint_acc
+        state.metrics["reward_action_rate"] = reward_action_rate  # ADDED
         state.metrics["reward_contact"] = reward_contact
-        state.metrics["reward_control"] = reward_control
         state.metrics["reward_alive"] = reward_alive
         state.info["step"] += 1
+        state.info["prev_action"] = action  # Store current action for next step
+        state.info["prev_action"] = action  # ADDED: store current action for next step
 
         return state.replace(pipeline_state=data,
                              obs=obs,
@@ -290,13 +321,15 @@ class BipedEnv(PipelineEnv):
                              done=done)
 
     # internal function to compute the observation
-    def _compute_obs(self, data):
+    def _compute_obs(self, data, action):
         """
         Compute the observation from the physics state.
 
         Args:
             data: brax.physics.base.State object
                   The physics state of the environment.
+            action: jax.Array
+                    The action taken by the agent.
         Returns:
             obs: jax.Array
                  The observation of the environment.
@@ -316,9 +349,21 @@ class BipedEnv(PipelineEnv):
         # phase variable
         sin_phase, cos_phase, _, _ = self._compute_phase(data.time)
 
+        # compute contacts
+        left_in_contact, right_in_contact = self._compute_foot_contact(data)
+        left_in_contact = jnp.array([left_in_contact])   # shape (1,)
+        right_in_contact = jnp.array([right_in_contact]) # shape (1,)
+        contacts = jnp.concatenate([left_in_contact, right_in_contact])  # shape (2,)
+
+        # compute torques
+        current_torques = data.ctrl  # shape (4,)
+
         # compute the observation
         obs = jnp.concatenate([position,        # base pos + joint pos
                                velocity,        # full gen velocity
+                               action,          # previous action
+                               current_torques, # current torques
+                               contacts,        # foot contact
                                sin_phase,       # phase variable
                                cos_phase])      # phase variable
 
@@ -370,8 +415,8 @@ class BipedEnv(PipelineEnv):
         phase = jnp.mod(t, self.config.T_phase) / self.config.T_phase
         sin_phase = jnp.sin(2.0 * jnp.pi * phase)
         cos_phase = jnp.cos(2.0 * jnp.pi * phase)
-        sin_phase = sin_phase[..., None]  # add last axis → (1, batch, 1)
-        cos_phase = cos_phase[..., None]  # add last axis → (1, batch, 1)
+        sin_phase = sin_phase[..., None]  # add last axis → (1, 1)
+        cos_phase = cos_phase[..., None]  # add last axis → (1, 1)
 
         # compute the phase for each leg
         left_phase = phase
@@ -382,8 +427,7 @@ class BipedEnv(PipelineEnv):
     @property
     def observation_size(self):
         """Returns the size of the observation space."""
-        # return 103
-        return 16
+        return 26
 
     @property
     def action_size(self):

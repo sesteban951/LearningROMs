@@ -49,6 +49,10 @@ class Controller:
         self.gear_ratio_RH = model.actuator_gear[RH_actuator_id, 0]
         self.gear_ratio_RK = model.actuator_gear[RK_actuator_id, 0]
 
+        # cache sensor IDs
+        self.sid_left_foot  = model.sensor("left_foot_touch").id
+        self.sid_right_foot = model.sensor("right_foot_touch").id
+
         # internal state and time
         self.time = 0.0
         self.q_base = np.zeros(3)
@@ -379,6 +383,9 @@ class Controller:
         # update the joystick command
         self.update_joystick_command()
 
+        # print contact info
+        self.parse_contact(data)
+
         # compute desired foot positions and velocities
         p_left_des_W, p_right_des_W, v_left_des_W, v_right_des_W = self.compute_foot_targets()
         p_left_des_W = p_left_des_W.reshape(2,1)
@@ -415,6 +422,24 @@ class Controller:
 
         return tau
 
+    # parse contact information
+    def parse_contact(self, data):
+
+        # read the sensor values
+        left_foot_force  = data.sensordata[self.sid_left_foot]
+        right_foot_force = data.sensordata[self.sid_right_foot]
+
+        # thresholds avoid noise
+        left_foot_in_contact  = left_foot_force  > 1e-6
+        right_foot_in_contact = right_foot_force > 1e-6
+
+        if left_foot_in_contact:
+            print("Left foot in contact, force: {:.3f}".format(left_foot_force))
+        if right_foot_in_contact:
+            print("Right foot in contact, force: {:.3f}".format(right_foot_force))
+
+        return left_foot_in_contact, right_foot_in_contact
+    
 
 ##################################################################################
 
