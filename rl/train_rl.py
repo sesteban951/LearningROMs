@@ -109,15 +109,15 @@ if __name__ == "__main__":
     # )
 
     # Initialize the environment and PPO hyperparameters
-    # env = envs.get_environment("biped")
-    env = envs.get_environment("biped_basic")
+    env = envs.get_environment("biped")
+    # env = envs.get_environment("biped_basic")
     ppo_config = dict(
-        num_timesteps=20_000_000,      # total training timesteps
-        num_evals=10,                  # number of evaluations
+        num_timesteps=15_000_000,      # total training timesteps
+        num_evals=20,                  # number of evaluations
         reward_scaling=1.0,            # reward scale
         episode_length=600,            # max episode length
         normalize_observations=True,   # normalize observations
-        unroll_length=20,               # PPO unroll length
+        unroll_length=20,              # PPO unroll length
         num_minibatches=32,            # PPO minibatches
         num_updates_per_batch=4,       # PPO updates per batch
         discounting=0.97,              # gamma
@@ -125,8 +125,8 @@ if __name__ == "__main__":
         clipping_epsilon=0.2,          # PPO clipping epsilon
         entropy_cost=1e-3,             # entropy bonus
         num_envs=8192,                 # parallel envs
-        batch_size=256,                # batch size
-        seed=0,                        # RNG seed
+        batch_size=256,                 # batch size
+        seed=0,                         # RNG seed
     )
 
     #----------------------- TRAIN -----------------------#
