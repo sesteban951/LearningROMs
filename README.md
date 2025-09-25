@@ -36,7 +36,10 @@ pip install mujoco-mjx
 ## Brax
 Used for reinforcement learning.
 
-Install BRAX via instructions: ```https://github.com/google/brax```
+Install BRAX via instructions: ```https://github.com/google/brax```, for example:
+```bash
+pip install brax
+```
 
 ## Tensorboard
 Used for logging RL progress.
