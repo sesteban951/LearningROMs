@@ -26,7 +26,9 @@ from algorithms.custom_networks import BraxPPONetworksWrapper, MLPConfig, MLP
 if __name__ == "__main__":
 
     # print the device being used (gpu or cpu)
-    print("JAX is using device:", jax.devices()[0])
+    device = jax.devices()[0]
+    print("Device type:", device.platform)      # e.g. 'gpu' or 'cpu'
+    print("Device name:", device.device_kind)   # e.g. 'NVIDIA GeForce RTX 4090'
 
     #--------------------------------- SETUP ---------------------------------#
 
@@ -152,8 +154,21 @@ if __name__ == "__main__":
     # Initialize the environment and PPO hyperparameters
     # env = envs.get_environment("biped_basic")
     # env = envs.get_environment("biped")
+    # policy_network_config = MLPConfig(
+    #     layer_sizes=(128, 128, 64, 32, 2*env.action_size),   # policy hidden layer sizes
+    #     activation_fn_name="swish",                        # activation function
+    # )
+    # value_network_config = MLPConfig(
+    #     layer_sizes=(512, 512, 512, 2512, 256, 1),  # value hidden layer sizes
+    #     activation_fn_name="swish",                # activation function
+    # )
+    # network_wrapper = BraxPPONetworksWrapper(
+    #     policy_network=MLP(policy_network_config),
+    #     value_network=MLP(value_network_config),
+    #     action_distribution=distribution.NormalTanhDistribution
+    # )
     # ppo_config = dict(
-    #     num_timesteps=25_000_000,      # total training timesteps
+    #     num_timesteps=250_000_000,      # total training timesteps
     #     num_evals=20,                  # number of evaluations
     #     reward_scaling=1.0,            # reward scale
     #     episode_length=800,            # max episode length
