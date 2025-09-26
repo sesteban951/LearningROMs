@@ -4,13 +4,9 @@ import os
 
 # jax imports
 import jax
-import functools
 
 # brax imports
 from brax.training.agents.ppo import train as ppo
-
-# flax imports
-import flax.linen as nn
 
 # for saving results
 import pickle
@@ -18,33 +14,36 @@ import pickle
 # for logging
 from tensorboardX import SummaryWriter
 
+# custom imports 
+from rl.algorithms.custom_networks import BraxPPONetworksWrapper, MLPConfig, MLP
+from rl.algorithms.custom_networks import print_model_summary, make_policy_function
+
 # PPO Training class
 class PPO_Train:
+    """
+    PPO Training class
+    
+    Args:
+        env: Brax environment instance
+        network_wrapper: BraxPPONetworksWrapper instance containing the policy and value networks
+        ppo_config: dictionary containing PPO hyperparameters
+    """
+    def __init__(self, env, network_wrapper, ppo_config):
 
-    def __init__(self, env, ppo_config):
-
-        # set the environment
+        # set the environment and PPO hyperparameters
         self.env = env
-
-        # TODO: if you want to eventually do domain randomization, you need a env copy
-        self.eval_env = env
-
-        # set the ppo config
+        self.network_wrapper = network_wrapper
         self.ppo_config = ppo_config
 
         # check if the save path exists, if not create it
         self.save_path = "./rl/policy"
         self.check_save_path()
 
+        # create SummaryWriter object for logging RL progress
+        self.create_summary_writer()
+
         # print info
         print(f"Created PPO training instance for: [{self.env.__class__.__name__}]")
-
-        # SummaryWriter object for logging
-        self.writer = None
-        self.times = None
-
-        # final params after training
-        self.params = None
 
     # check if the save file path exists
     def check_save_path(self):
@@ -58,6 +57,21 @@ class PPO_Train:
             # create the directory
             os.makedirs(self.save_path)
             print(f"Created directory: [{self.save_path}]")
+
+    # create the summary writer for TensorBoard logging
+    def create_summary_writer(self):
+
+        # get current datetime for logging
+        self.robot_name = self.env.robot_name
+        self.current_datetime = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
+        log_file = f"./rl/log/{self.robot_name}_log_{self.current_datetime}"
+
+        # create a SummaryWriter for logging
+        self.writer = SummaryWriter(log_file)
+        self.times = [datetime.now()]
+
+        # print info
+        print(f"Logging to: [{log_file}].")
 
     # progress function for logging
     def progress(self, num_steps, metrics):
@@ -84,51 +98,49 @@ class PPO_Train:
     # main training function
     def train(self):
 
-        # get current datetime for logging
-        robot_name = self.env.robot_name
-        current_datetime = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
-        log_file = f"./rl/log/{robot_name}_log_{current_datetime}"
-
-        # print info
-        print(f"Logging to: [{log_file}].")
-
-        # create a SummaryWriter for logging
-        self.writer = SummaryWriter(log_file)
-        self.times = [datetime.now()]
-
         # create the training function
-        train_fn = functools.partial(
-            ppo.train,
-            environment=self.env,
-            **self.ppo_config
-        )
+        # train_fn = functools.partial(
+        #     ppo.train,
+        #     environment=self.env,
+        #     **self.ppo_config
+        # )
 
         # train the PPO agent
         #   - (make_policy) makes the policy function
         #   - (params) are the trained parameters
         #   - (metrics) final training metrics
         print("Beginning Training...")
-        self.make_policy, self.params, self.metrics = train_fn(
+        # self.make_policy, self.params, self.metrics = train_fn(
+        #     environment=self.env,
+        #     progress_fn=self.progress,
+        # )
+        make_policy, params, metrics = ppo.train(
             environment=self.env,
+            network_factory=self.network_wrapper.make_ppo_networks,
             progress_fn=self.progress,
+            **self.ppo_config
         )
         print("Training complete.")
         print(f"time to jit: {self.times[1] - self.times[0]}")
         print(f"time to train: {self.times[-1] - self.times[1]}")
 
-        # print the final metrics
-        print("Final training metrics:")
-        for key, val in self.metrics.items():
-
-            # convert jax arrays to floats
-            if isinstance(val, jax.Array):
-                val = float(val)
-
-            print(f"  {key}: {val}")
-
         # save the trained policy
         print("Saving trained policy...")
-        save_file = f"{self.save_path}/{robot_name}_policy_{current_datetime}.pkl"
+        save_file = f"{self.save_path}/{self.robot_name}_policy_{self.current_datetime}.pkl"
+        # with open(save_file, "wb") as f:
+        #     pickle.dump(self.params, f)
+        # network_and_params = {
+        #     "network_wrapper": self.network_wrapper,
+        #     "params": params
+        # }
+        policy_data = {
+            "policy_config": self.network_wrapper.policy_network.config,
+            "value_config": self.network_wrapper.value_network.config,
+            "action_dist_class": self.network_wrapper.action_distribution.__name__,
+            "params": params
+        }
         with open(save_file, "wb") as f:
-            pickle.dump(self.params, f)
+            pickle.dump(policy_data, f)
         print(f"Saved trained policy to: [{save_file}]")
+
+        return make_policy, params, metrics

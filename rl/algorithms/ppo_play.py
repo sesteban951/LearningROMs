@@ -13,68 +13,98 @@ from brax.training import types
 # for importing policy
 import pickle
 
+# custom imports
+from rl.algorithms.custom_networks import MLP, MLPConfig, BraxPPONetworksWrapper
+from rl.algorithms.custom_networks import make_policy_function
+from brax.training import distribution
+
+
 # PPO Training class
 class PPO_Play:
 
-    def __init__(self, env, params_path):
+    def __init__(self, env, policy_data_path):
 
-        # Load trained params
-        with open(params_path, "rb") as f:
-            self.params = pickle.load(f)
+        # make copy of the env
+        self.env = env
+
+        # Load trained policy params
+        with open(policy_data_path, "rb") as f:
+            self.policy_data = pickle.load(f)
 
         # print info
-        print(f"Loaded policy params from: [{params_path}]")
+        print(f"Loaded policy data from: [{policy_data_path}]")
 
-        # make copy of the envand env config
-        self.env = env
-        self.env_config = env.config
-
-    # function that rebuilds the policy function, and return jitted policy and obs functions
+    # build the policy function
     def build_policy_fn(self):
+
+        # unpack the policy data
+        policy_network_config = self.policy_data["policy_config"]
+        value_network_config = self.policy_data["value_config"]
+        action_dist_name = self.policy_data["action_dist_class"]
+        params = self.policy_data["params"]
+
+        #  rebuild the action distribution
+        if action_dist_name == "NormalTanhDistribution":
+            action_dist = distribution.NormalTanhDistribution
+        else:
+            raise ValueError(f"Unknown action or not implemented distribution: [{action_dist_name}]")
         
-        # get relevant env params
+        # rebuild the network wrapper
+        network_wrapper = BraxPPONetworksWrapper(
+            policy_network=MLP(policy_network_config),
+            value_network=MLP(value_network_config),
+            action_distribution=action_dist
+        )
+        
+        # observation and action size
         obs_size = self.env.observation_size
         act_size = self.env.action_size
 
-        # set the observation preprocessing function
-        normalize_obs = True  # WARNING: this is hardcoded, make sure it matches ppo config!
-        if normalize_obs == True:
-            # Normalize observations
-            preprocess_observations_fn = running_statistics.normalize
-        else: 
-            # Identity function (no preprocessing, just pass through)
-            preprocess_observations_fn = types.identity_observation_preprocessor        
+        # set some hardcoded params
+        normalize_obs = True   # whether to normalize observations WARNING: make sure this matches PPO config
+        deterministic = True   # for inference, we want deterministic actions
 
-        # make the ppo networks
-        networks = ppo_networks.make_ppo_networks(
-            observation_size=obs_size,
-            action_size=act_size,
-            preprocess_observations_fn=preprocess_observations_fn,
+        # rebuild the networks
+        policy_fn = make_policy_function(
+            network_wrapper=network_wrapper,
+            params=params,
+            obs_size=obs_size,
+            act_size=act_size,
+            normalize_observations=normalize_obs,
+            deterministic=deterministic
         )
 
-        print("Rebuilding policy function...")
+        # # build the function factory
+        # inference_fn_factory = ppo_networks.make_inference_fn(networks)
 
-        # build the function factory
-        inference_fn_factory = ppo_networks.make_inference_fn(networks)
+        # # create the actual inference function using the params
+        # deterministic = True   # for inference, we want deterministic actions
+        # self.policy_fn = inference_fn_factory(params=self.params,
+        #                                       deterministic=deterministic)
 
-        # create the actual inference function using the params
-        deterministic = True   # for inference, we want deterministic actions
-        self.policy_fn = inference_fn_factory(params=self.params,
-                                              deterministic=deterministic)
-        
         print("Rebuilt policy function.")
+        
+        return policy_fn
+        
+    # build the observation function
+    def build_obs_fn(self):
+        
+        # build the observation function
+        obs_fn = self.env._compute_obs
+
+        return obs_fn
 
     # jit the policy and obs functions for speed
     def policy_and_obs_functions(self):
 
         # rebuild the policy and obs functions
-        self.build_policy_fn()
+        policy_fn = self.build_policy_fn()
+        obs_fn = self.build_obs_fn()
 
-        print("Jitting the policy and observation functions...")
+        # jit the policy and observation functions
+        policy_jit = jax.jit(lambda obs: policy_fn(obs, jax.random.PRNGKey(0))[0])
+        obs_jit = jax.jit(obs_fn)
 
-        policy_jit = jax.jit(lambda obs: self.policy_fn(obs, jax.random.PRNGKey(0))[0])
-        obs_jit = jax.jit(self.env._compute_obs)
-
-        print("Jitted functions.")
+        print("Jitted policy and observation functions.")
 
         return policy_jit, obs_jit

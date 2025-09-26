@@ -67,25 +67,26 @@ if __name__ == "__main__":
     #----------------------- POLICY IMPORT -----------------------#
 
     # Load the environment and policy parameters
-    # env = envs.get_environment("cart_pole")
-    # params_path = "./rl/policy/cart_pole_policy.pkl"
+    env = envs.get_environment("cart_pole")
+    # policy_data_path = "./rl/policy/cart_pole_policy.pkl"
+    policy_data_path = "./rl/policy/cart_pole_policy_2025_09_25_18_03_01.pkl"
 
     # Load the environment and policy parameters
     # env = envs.get_environment("acrobot")
-    # params_path = "./rl/policy/acrobot_policy.pkl"
+    # policy_data_path = "./rl/policy/acrobot_policy.pkl"
 
     # Load the environment and policy parameters
     # env = envs.get_environment("paddle_ball")
-    # params_path = "./rl/policy/paddle_ball_policy.pkl"
+    # policy_data_path = "./rl/policy/paddle_ball_policy.pkl"
 
     # Load the environment and policy parameters
     # env = envs.get_environment("hopper")
-    # params_path = "./rl/policy/hopper_policy.pkl"
+    # policy_data_path = "./rl/policy/hopper_policy.pkl"
 
     # Load the environment and policy parameters
     # env = envs.get_environment("biped")
     # # env = envs.get_environment("biped_basic")
-    # params_path = "./rl/policy/biped_policy_2025_09_24_15_31_07.pkl"
+    # policy_data_path = "./rl/policy/biped_policy_2025_09_24_15_31_07.pkl"
 
     #----------------------- POLICY SETUP -----------------------#
 
@@ -93,7 +94,7 @@ if __name__ == "__main__":
     config = env.config
 
     # Create the PPO_Play object
-    ppo_player = PPO_Play(env, params_path)
+    ppo_player = PPO_Play(env, policy_data_path)
 
     # get the jitted policy and obs functions
     policy_fn, obs_fn = ppo_player.policy_and_obs_functions()

@@ -5,6 +5,7 @@
 ##
 
 # python imports
+import numpy as np
 from typing import Sequence, Callable, Union
 
 # flax impports
@@ -39,9 +40,27 @@ class MLPConfig:
 
     layer_sizes: Sequence[int]          # sizes of each hidden layer
     bias: bool = True                   # whether to use bias vector in dense layers
-    kernel_init: nn.initializers.Initializer = nn.initializers.lecun_uniform()  # kernel initializer
+    kernel_init_name: str = "lecun_uniform"  # kernel initializer
     activate_final: bool = False        # whether to activate the final layer
-    activation_fn: nn.Module = nn.tanh  # activation function to use
+    activation_fn_name: str = "tanh"         # activation function to use
+
+    # get the kernel initializer function
+    def kernel_init(self):
+        if self.kernel_init_name == "lecun_uniform":
+            return nn.initializers.lecun_uniform()
+        elif self.kernel_init_name == "he_normal":
+            return nn.initializers.variance_scaling(2.0, "fan_in", "truncated_normal")
+        else:
+            raise ValueError(self.kernel_init_name)
+
+    # get the activation function
+    def activation_fn(self):
+        if self.activation_fn_name == "tanh":
+            return nn.tanh
+        elif self.activation_fn_name == "swish":
+            return nn.swish
+        else:
+            raise ValueError(self.activation_fn_name)
 
 
 # basic MLP
@@ -65,13 +84,13 @@ class MLP(nn.Module):
             x = nn.Dense(
                 features=layer_size,
                 use_bias=self.config.bias,
-                kernel_init=nn.initializers.lecun_uniform(),
+                kernel_init=self.config.kernel_init(),
                 name=f"dense_{i}",
             )(x)
 
             # apply the activation function at every layer and optionally at the final layer
             if i != len(self.config.layer_sizes) - 1 or self.config.activate_final:
-                x = self.config.activation_fn(x)
+                x = self.config.activation_fn()(x)
 
         return x
 
@@ -98,6 +117,7 @@ class RNNConfig:
 
 
 # basic RNN
+# TODO: test if this actually works, not sure if brax supports this
 class RNN(nn.Module):
     """
     Simple recurrent neural network wrapper (supports LSTM/GRU).
@@ -144,6 +164,22 @@ class RNN(nn.Module):
         return x, carry
 
 
+# util to print some details about a flax model
+def print_model_summary(module: nn.Module, input_shape: Sequence[int]):
+    """
+    Print a readable summary of a flax neural network module.
+
+    Args:
+        module: The flax module to summarize.
+        input_shape: The shape of the input to the module.
+    """
+
+    # Create a dummy input
+    dummy_rng = jax.random.PRNGKey(0)
+    dummy_input = jnp.ones(input_shape)
+    print(module.tabulate(dummy_rng, dummy_input, depth=1))
+
+
 ##################################### WRAPPER #########################################
 
 @struct.dataclass
@@ -152,8 +188,8 @@ class BraxPPONetworksWrapper:
     Thin wrapper to hold custom networks for PPO training in Brax.
     """
 
-    policy_network: nn.Module # the policy network
-    value_network: nn.Module  # the value network
+    policy_network: nn.Module # the policy network (default is Sequence[int] = (32,) * 4, swish activation)
+    value_network: nn.Module  # the value network (default is Sequence[int] = (256,) * 5, swish activation)
     action_distribution: distribution.ParametricDistribution # distribution for actions
 
 
@@ -161,7 +197,8 @@ class BraxPPONetworksWrapper:
         self,
         obs_size: int,   # observations size
         act_size: int,   # actions size
-        preprocess_observations_fn: types.PreprocessObservationFn # function to preprocess observations
+        preprocess_observations_fn: types.PreprocessObservationFn = types.identity_observation_preprocessor # function to preprocess observations
+                                                                                                            # default is identity function
     ) -> PPONetworks:
         """
         Create the PPO networks using the custom policy and value networks.
@@ -178,15 +215,17 @@ class BraxPPONetworksWrapper:
         action_dist = self.action_distribution(event_size=act_size)
 
         # create dummy observation for initialization
-        dummy_obs = jnp.zeros((1, obs_size))
+        dummy_obs = jnp.zeros(obs_size)
 
         # create a random key for initialization
         dummy_rng = jax.random.PRNGKey(0)
+        policy_rng, value_rng = jax.random.split(dummy_rng)
 
         # check that the size of the policy network matches the size of the action distribution
-        dummy_params = self.policy_network.init(dummy_rng, dummy_obs)
-        dummy_policy_output = self.policy_network.apply(dummy_params, dummy_obs)
-        dummy_value_output = self.value_network.apply(dummy_params, dummy_obs)
+        dummy_policy_params = self.policy_network.init(policy_rng, dummy_obs)
+        dummy_policy_output = self.policy_network.apply(dummy_policy_params, dummy_obs)
+        dummy_value_params = self.value_network.init(value_rng, dummy_obs)
+        dummy_value_output = self.value_network.apply(dummy_value_params, dummy_obs)
 
         # shapes to make sure should match
         action_dist_params_shape = action_dist.param_size
@@ -243,31 +282,13 @@ class BraxPPONetworksWrapper:
         ppo_networks = PPONetworks(
             policy_network=policy_network,
             value_network=value_network,
-            action_distribution=action_dist,
+            parametric_action_distribution=action_dist,
         )
 
         return ppo_networks
 
 
-##################################### UTILS #########################################
-
-# util to print some details about a flax model
-def print_model_summary(module: nn.Module, input_shape: Sequence[int]):
-    """
-    Print a readable summary of a flax neural network module.
-
-    Args:
-        module: The flax module to summarize.
-        input_shape: The shape of the input to the module.
-    """
-
-    # Create a dummy input
-    rng = jax.random.PRNGKey(0)
-    dummy_input = jnp.ones(input_shape)
-    print(module.tabulate(rng, dummy_input, depth=1))
-
-
-# create a policy function
+# create the policy function
 def make_policy_function(
         network_wrapper: BraxPPONetworksWrapper, # the networks wrapper
         params: Params,                          # the model parameters
@@ -277,7 +298,7 @@ def make_policy_function(
         deterministic: bool = True               # whether to use deterministic actions
     ):
     """
-    Create from a trained model a function that takes observations and returns actions.
+    Create a policy from a trained model as a function that takes observations and returns actions.
 
     Args:
         network_wrapper: The BraxPPONetworksWrapper containing the policy and value networks.
@@ -287,7 +308,7 @@ def make_policy_function(
         normalize_observations: Whether to normalize observations using running statistics.
         deterministic: Whether to use deterministic actions (e.g., mean of the distribution).
     Returns:
-
+        A function that takes observations and returns actions.
     """
 
     # preprocessing of observatiosn functions
