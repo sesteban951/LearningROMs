@@ -2,7 +2,7 @@
 <mujoco model="biped">
 
 	<!-- Simulation Parameters -->
-	<option solver="Newton" integrator="RK4" timestep="0.005" iterations="20" ls_iterations="20" cone="elliptic">
+	<option solver="Newton" integrator="RK4" timestep="0.002" iterations="20" ls_iterations="20" cone="elliptic">
 		<flag eulerdamp="disable"/>
 	</option>
 

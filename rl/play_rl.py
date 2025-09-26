@@ -88,7 +88,7 @@ if __name__ == "__main__":
     # Load the environment and policy parameters
     # # env = envs.get_environment("biped_basic")
     env = envs.get_environment("biped")
-    policy_data_path = "./rl/policy/biped_policy_2025_09_26_09_29_20.pkl"
+    policy_data_path = "./rl/policy/biped_policy_2025_09_26_11_33_35.pkl"
 
     #----------------------------- POLICY SETUP -----------------------------#
 

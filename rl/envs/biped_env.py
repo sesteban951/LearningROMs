@@ -19,20 +19,20 @@ class BipedConfig:
     model_path: str = "./models/biped.xml"
 
     # number of "simulation steps" for every control input
-    physics_steps_per_control_step: int = 4
+    physics_steps_per_control_step: int = 10
 
     # Reward function coefficients
-    reward_base_pos_z: float = 10.0    # target base height
+    reward_base_pos_z: float = 0.01    # target base height
     reward_base_vel_x: float = 1.0     # forward velocity target
-    reward_base_vel_z: float = 2.0     # target base height
-    reward_base_ang_pos: float = 1.0   # torso orientation target
-    reward_base_ang_vel: float = 0.5   # torso angular velocity target
-    reward_joint_pos: float = 1.0      # joint position 
+    reward_base_vel_z: float = 0.01    # target base height
+    reward_base_ang_pos: float = 2.0   # torso orientation target
+    reward_base_ang_vel: float = 0.15  # torso angular velocity target
+    reward_joint_pos: float = 0.1      # joint position 
     reward_joint_vel: float = 1e-3     # joint velocity 
     reward_joint_acc: float = 2.5e-7   # joint acceleration
     reward_action_rate: float = 0.01   # control cost
-    reward_contact: float = 0.18       # foot contact reward
-    reward_alive: float = 0.15         # alive reward bonus (if not terminated)
+    reward_contact: float = 0.01       # foot contact reward
+    reward_alive: float = 0.01         # alive reward bonus (if not terminated)
 
     # desired values
     base_pos_z_des: float = 0.8  # desired center of mass height
