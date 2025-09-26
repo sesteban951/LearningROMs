@@ -12,8 +12,8 @@ from brax.training import distribution
 import pickle
 
 # custom imports
-from rl.algorithms.custom_networks import BraxPPONetworksWrapper, MLP
-from rl.algorithms.custom_networks import make_policy_function
+from algorithms.custom_networks import BraxPPONetworksWrapper, MLP
+from algorithms.custom_networks import make_policy_function
 
 
 # PPO Training class

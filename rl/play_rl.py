@@ -77,18 +77,18 @@ if __name__ == "__main__":
     # policy_data_path = "./rl/policy/acrobot_policy_2025_09_25_18_26_12.pkl"
 
     # Load the environment and policy parameters
-    env = envs.get_environment("paddle_ball")
-    # policy_data_path = "./rl/policy/paddle_ball_policy.pkl"
-    policy_data_path = "./rl/policy/paddle_ball_policy_2025_09_25_20_03_56.pkl"
+    # env = envs.get_environment("paddle_ball")
+    # # policy_data_path = "./rl/policy/paddle_ball_policy.pkl"
+    # policy_data_path = "./rl/policy/paddle_ball_policy_2025_09_25_20_03_56.pkl"
 
     # Load the environment and policy parameters
     # env = envs.get_environment("hopper")
     # policy_data_path = "./rl/policy/hopper_policy.pkl"
 
     # Load the environment and policy parameters
-    # env = envs.get_environment("biped")
     # # env = envs.get_environment("biped_basic")
-    # policy_data_path = "./rl/policy/biped_policy_2025_09_24_15_31_07.pkl"
+    env = envs.get_environment("biped")
+    policy_data_path = "./rl/policy/biped_policy_2025_09_26_09_29_20.pkl"
 
     #----------------------------- POLICY SETUP -----------------------------#
 
@@ -157,8 +157,8 @@ if __name__ == "__main__":
                 mjx_data = mjx_data.replace(qpos=qpos, qvel=qvel)
 
                 # compute the observation
-                # obs = obs_fn(mjx_data, act)   # obs is a jax array
-                obs = obs_fn(mjx_data)   # obs is a jax array
+                obs = obs_fn(mjx_data, act)   # obs is a jax array
+                # obs = obs_fn(mjx_data)   # obs is a jax array
 
                 # compute the action
                 act = policy_fn(obs)  # act is a jax array
