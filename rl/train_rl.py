@@ -9,9 +9,6 @@
 # jax imports
 import jax
 
-# flax imports
-import flax.linen as nn
-
 # brax imports
 from brax import envs
 import brax.training.distribution as distribution
@@ -31,43 +28,56 @@ if __name__ == "__main__":
     # print the device being used (gpu or cpu)
     print("JAX is using device:", jax.devices()[0])
 
-    #----------------------- SETUP -----------------------#
+    #--------------------------------- SETUP ---------------------------------#
 
     # Initialize the environment and PPO hyperparameters
-    env = envs.get_environment("cart_pole")
-    policy_network_config = MLPConfig(
-        layer_sizes=(32, 32, 32, 32, 2*env.action_size),   # policy hidden layer sizes
-        activation_fn_name="swish",                        # activation function
-    )
-    value_network_config = MLPConfig(
-        layer_sizes=(256, 256, 256, 256, 256, 1),  # value hidden layer sizes
-        activation_fn_name="swish",                # activation function
-    )
-    network_wrapper = BraxPPONetworksWrapper(
-        policy_network=MLP(policy_network_config),
-        value_network=MLP(value_network_config),
-        action_distribution=distribution.NormalTanhDistribution
-    )
-    ppo_config = dict(
-        num_timesteps=60_000_000,      # total training timesteps
-        num_evals=10,                  # number of evaluations
-        reward_scaling=0.1,            # reward scale
-        episode_length=150,            # max episode length
-        normalize_observations=True,   # normalize observations
-        unroll_length=10,              # PPO unroll length
-        num_minibatches=32,            # PPO minibatches
-        num_updates_per_batch=8,       # PPO updates per batch
-        discounting=0.97,              # gamma
-        learning_rate=1e-3,            # optimizer LR
-        clipping_epsilon=0.2,          # PPO clipping epsilon
-        entropy_cost=1e-3,             # entropy bonus
-        num_envs=1024,                 # parallel envs
-        batch_size=1024,               # batch size
-        seed=0,                        # RNG seed
-    )
+    # env = envs.get_environment("cart_pole")
+    # policy_network_config = MLPConfig(
+    #     layer_sizes=(32, 32, 32, 32, 2*env.action_size),   # policy hidden layer sizes
+    #     activation_fn_name="swish",                        # activation function
+    # )
+    # value_network_config = MLPConfig(
+    #     layer_sizes=(256, 256, 256, 256, 256, 1),  # value hidden layer sizes
+    #     activation_fn_name="swish",                # activation function
+    # )
+    # network_wrapper = BraxPPONetworksWrapper(
+    #     policy_network=MLP(policy_network_config),
+    #     value_network=MLP(value_network_config),
+    #     action_distribution=distribution.NormalTanhDistribution
+    # )
+    # ppo_config = dict(
+    #     num_timesteps=60_000_000,      # total training timesteps
+    #     num_evals=10,                  # number of evaluations
+    #     reward_scaling=0.1,            # reward scale
+    #     episode_length=150,            # max episode length
+    #     normalize_observations=True,   # normalize observations
+    #     unroll_length=10,              # PPO unroll length
+    #     num_minibatches=32,            # PPO minibatches
+    #     num_updates_per_batch=8,       # PPO updates per batch
+    #     discounting=0.97,              # gamma
+    #     learning_rate=1e-3,            # optimizer LR
+    #     clipping_epsilon=0.2,          # PPO clipping epsilon
+    #     entropy_cost=1e-3,             # entropy bonus
+    #     num_envs=1024,                 # parallel envs
+    #     batch_size=1024,               # batch size
+    #     seed=0,                        # RNG seed
+    # )
 
-    # # Initialize the environment and PPO hyperparameters
+    # Initialize the environment and PPO hyperparameters
     # env = envs.get_environment("acrobot")
+    # policy_network_config = MLPConfig(
+    #     layer_sizes=(32, 32, 32, 32, 2*env.action_size),   # policy hidden layer sizes
+    #     activation_fn_name="swish",                        # activation function
+    # )
+    # value_network_config = MLPConfig(
+    #     layer_sizes=(256, 256, 256, 256, 256, 1),  # value hidden layer sizes
+    #     activation_fn_name="swish",                # activation function
+    # )
+    # network_wrapper = BraxPPONetworksWrapper(
+    #     policy_network=MLP(policy_network_config),
+    #     value_network=MLP(value_network_config),
+    #     action_distribution=distribution.NormalTanhDistribution
+    # )
     # ppo_config = dict(
     #     num_timesteps=60_000_000,      # total training timesteps
     #     num_evals=10,                  # number of evaluations
@@ -86,25 +96,38 @@ if __name__ == "__main__":
     #     seed=0,                        # RNG seed
     # )
 
-    # # Initialize the environment and PPO hyperparameters
-    # env = envs.get_environment("paddle_ball")
-    # ppo_config = dict(
-    #     num_timesteps=30_000_000,      # total training timesteps
-    #     num_evals=10,                  # number of evaluations
-    #     reward_scaling=0.1,            # reward scale
-    #     episode_length=500,            # max episode length
-    #     normalize_observations=True,   # normalize observations
-    #     unroll_length=5,              # PPO unroll length
-    #     num_minibatches=32,            # PPO minibatches
-    #     num_updates_per_batch=8,       # PPO updates per batch
-    #     discounting=0.97,              # gamma
-    #     learning_rate=5e-4,            # optimizer LR
-    #     clipping_epsilon=0.2,          # PPO clipping epsilon
-    #     entropy_cost=1e-3,             # entropy bonus
-    #     num_envs=2048,                 # parallel envs
-    #     batch_size=2048,               # batch size
-    #     seed=0,                        # RNG seed
-    # )
+    # Initialize the environment and PPO hyperparameters
+    env = envs.get_environment("paddle_ball")
+    policy_network_config = MLPConfig(
+        layer_sizes=(32, 32, 32, 32, 2*env.action_size),   # policy hidden layer sizes
+        activation_fn_name="swish",                        # activation function
+    )
+    value_network_config = MLPConfig(
+        layer_sizes=(256, 256, 256, 256, 256, 1),  # value hidden layer sizes
+        activation_fn_name="swish",                # activation function
+    )
+    network_wrapper = BraxPPONetworksWrapper(
+        policy_network=MLP(policy_network_config),
+        value_network=MLP(value_network_config),
+        action_distribution=distribution.NormalTanhDistribution
+    )
+    ppo_config = dict(
+        num_timesteps=60_000_000,      # total training timesteps
+        num_evals=10,                  # number of evaluations
+        reward_scaling=0.1,            # reward scale
+        episode_length=500,            # max episode length
+        normalize_observations=True,   # normalize observations
+        unroll_length=5,              # PPO unroll length
+        num_minibatches=32,            # PPO minibatches
+        num_updates_per_batch=8,       # PPO updates per batch
+        discounting=0.97,              # gamma
+        learning_rate=5e-4,            # optimizer LR
+        clipping_epsilon=0.2,          # PPO clipping epsilon
+        entropy_cost=1e-3,             # entropy bonus
+        num_envs=2048,                 # parallel envs
+        batch_size=2048,               # batch size
+        seed=0,                        # RNG seed
+    )
 
     # Initialize the environment and PPO hyperparameters
     # env = envs.get_environment("hopper")
@@ -147,7 +170,7 @@ if __name__ == "__main__":
     #     seed=0,                        # RNG seed
     # )
 
-    #----------------------- TRAIN -----------------------#
+    #--------------------------------- TRAIN ---------------------------------#
 
     # Create PPO training instance
     ppo_trainer = PPO_Train(env, network_wrapper, ppo_config)

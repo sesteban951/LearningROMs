@@ -23,6 +23,35 @@ from brax.training.agents.ppo.networks import PPONetworks, make_inference_fn
 from brax.training.types import Params
 
 
+"""
+===============================================================
+ Activation ↔ Recommended Kernel Initializer Cheat Sheet
+===============================================================
+
+For stable training in PPO / RL:
+
+| Activation   | Recommended Initializer(s) | Notes                                |
+|--------------|-----------------------------|-------------------------------------|
+| tanh         | lecun_uniform / lecun_normal | Best for bounded activations, avoids saturation |
+| sigmoid      | lecun_uniform / lecun_normal | Same as tanh                       |
+| relu         | he_uniform / he_normal       | Standard for ReLU family           |
+| leaky_relu   | he_uniform / he_normal       | Same as ReLU, avoids dead neurons  |
+| elu          | he_uniform / he_normal       | Smooth ReLU variant                |
+| gelu         | he_uniform / he_normal       | Modern smooth activation           |
+| swish        | he_uniform / he_normal       | Empirically stable for continuous control |
+| softmax      | xavier_uniform / xavier_normal | Good for classification logits    |
+| linear (id)  | xavier_uniform / xavier_normal | Safe default for value head       |
+| orthogonal   | optional for RNNs / stability | Sometimes used in RL exploration  |
+
+Rule of thumb:
+- **tanh/sigmoid** → LeCun
+- **ReLU-family (relu, leaky_relu, elu, gelu, swish)** → He/Kaiming
+- **softmax/linear outputs** → Xavier
+- **orthogonal** → special cases (e.g. RNNs)
+===============================================================
+"""
+
+
 ##################################### NETWORKS #########################################
 
 # MLP config
@@ -38,18 +67,28 @@ class MLPConfig:
         - softmax (for final layer) -> Xavier/Glorot uniform/normal
     """
 
-    layer_sizes: Sequence[int]          # sizes of each hidden layer
-    bias: bool = True                   # whether to use bias vector in dense layers
+    layer_sizes: Sequence[int]               # sizes of each hidden layer
+    bias: bool = True                        # whether to use bias vector in dense layers
     kernel_init_name: str = "lecun_uniform"  # kernel initializer
-    activate_final: bool = False        # whether to activate the final layer
+    activate_final: bool = False             # whether to activate the final layer
     activation_fn_name: str = "tanh"         # activation function to use
 
     # get the kernel initializer function
     def kernel_init(self):
         if self.kernel_init_name == "lecun_uniform":
             return nn.initializers.lecun_uniform()
+        elif self.kernel_init_name == "lecun_normal":
+            return nn.initializers.lecun_normal()
+        elif self.kernel_init_name == "he_uniform":
+            return nn.initializers.variance_scaling(2.0, "fan_in", "uniform")
         elif self.kernel_init_name == "he_normal":
             return nn.initializers.variance_scaling(2.0, "fan_in", "truncated_normal")
+        elif self.kernel_init_name == "xavier_uniform":
+            return nn.initializers.xavier_uniform()
+        elif self.kernel_init_name == "xavier_normal":
+            return nn.initializers.xavier_normal()
+        elif self.kernel_init_name == "orthogonal":
+            return nn.initializers.orthogonal()
         else:
             raise ValueError(self.kernel_init_name)
 
@@ -57,6 +96,16 @@ class MLPConfig:
     def activation_fn(self):
         if self.activation_fn_name == "tanh":
             return nn.tanh
+        elif self.activation_fn_name == "sigmoid":
+            return nn.sigmoid
+        elif self.activation_fn_name == "relu":
+            return nn.relu
+        elif self.activation_fn_name == "leaky_relu":
+            return nn.leaky_relu
+        elif self.activation_fn_name == "elu":
+            return nn.elu
+        elif self.activation_fn_name == "gelu":
+            return nn.gelu
         elif self.activation_fn_name == "swish":
             return nn.swish
         else:

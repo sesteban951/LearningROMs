@@ -14,9 +14,6 @@ import pickle
 # for logging
 from tensorboardX import SummaryWriter
 
-# custom imports 
-from rl.algorithms.custom_networks import BraxPPONetworksWrapper, MLPConfig, MLP
-from rl.algorithms.custom_networks import print_model_summary, make_policy_function
 
 # PPO Training class
 class PPO_Train:
@@ -70,7 +67,7 @@ class PPO_Train:
         self.writer = SummaryWriter(log_file)
         self.times = [datetime.now()]
 
-        # print info
+        # print logging path info
         print(f"Logging to: [{log_file}].")
 
     # progress function for logging
@@ -83,6 +80,7 @@ class PPO_Train:
         else:
             print(f"  Step: {num_steps}, Reward: N/A")
 
+        # append the current time
         self.times.append(datetime.now())
 
         # Write all metrics to tensorboard
@@ -98,22 +96,11 @@ class PPO_Train:
     # main training function
     def train(self):
 
-        # create the training function
-        # train_fn = functools.partial(
-        #     ppo.train,
-        #     environment=self.env,
-        #     **self.ppo_config
-        # )
-
         # train the PPO agent
         #   - (make_policy) makes the policy function
         #   - (params) are the trained parameters
         #   - (metrics) final training metrics
         print("Beginning Training...")
-        # self.make_policy, self.params, self.metrics = train_fn(
-        #     environment=self.env,
-        #     progress_fn=self.progress,
-        # )
         make_policy, params, metrics = ppo.train(
             environment=self.env,
             network_factory=self.network_wrapper.make_ppo_networks,
@@ -125,14 +112,7 @@ class PPO_Train:
         print(f"time to train: {self.times[-1] - self.times[1]}")
 
         # save the trained policy
-        print("Saving trained policy...")
         save_file = f"{self.save_path}/{self.robot_name}_policy_{self.current_datetime}.pkl"
-        # with open(save_file, "wb") as f:
-        #     pickle.dump(self.params, f)
-        # network_and_params = {
-        #     "network_wrapper": self.network_wrapper,
-        #     "params": params
-        # }
         policy_data = {
             "policy_config": self.network_wrapper.policy_network.config,
             "value_config": self.network_wrapper.value_network.config,

@@ -64,20 +64,22 @@ def parse_contact(data):
 
 if __name__ == "__main__":
 
-    #----------------------- POLICY IMPORT -----------------------#
+    #----------------------------- POLICY IMPORT -----------------------------#
 
     # Load the environment and policy parameters
-    env = envs.get_environment("cart_pole")
-    # policy_data_path = "./rl/policy/cart_pole_policy.pkl"
-    policy_data_path = "./rl/policy/cart_pole_policy_2025_09_25_18_03_01.pkl"
+    # env = envs.get_environment("cart_pole")
+    # # policy_data_path = "./rl/policy/cart_pole_policy.pkl"
+    # policy_data_path = "./rl/policy/cart_pole_policy_2025_09_25_18_03_01.pkl"
 
     # Load the environment and policy parameters
     # env = envs.get_environment("acrobot")
-    # policy_data_path = "./rl/policy/acrobot_policy.pkl"
+    # # policy_data_path = "./rl/policy/acrobot_policy.pkl"
+    # policy_data_path = "./rl/policy/acrobot_policy_2025_09_25_18_26_12.pkl"
 
     # Load the environment and policy parameters
-    # env = envs.get_environment("paddle_ball")
+    env = envs.get_environment("paddle_ball")
     # policy_data_path = "./rl/policy/paddle_ball_policy.pkl"
+    policy_data_path = "./rl/policy/paddle_ball_policy_2025_09_25_20_03_56.pkl"
 
     # Load the environment and policy parameters
     # env = envs.get_environment("hopper")
@@ -88,10 +90,7 @@ if __name__ == "__main__":
     # # env = envs.get_environment("biped_basic")
     # policy_data_path = "./rl/policy/biped_policy_2025_09_24_15_31_07.pkl"
 
-    #----------------------- POLICY SETUP -----------------------#
-
-    # get the environment config
-    config = env.config
+    #----------------------------- POLICY SETUP -----------------------------#
 
     # Create the PPO_Play object
     ppo_player = PPO_Play(env, policy_data_path)
@@ -99,10 +98,10 @@ if __name__ == "__main__":
     # get the jitted policy and obs functions
     policy_fn, obs_fn = ppo_player.policy_and_obs_functions()
 
-    #------------------------- SIMULATION -------------------------#
+    #------------------------------- SIMULATION -------------------------------#
 
     # import the mujoco model
-    model_path = config.model_path
+    model_path = env.config.model_path
     mj_model = mujoco.MjModel.from_xml_path(model_path)
     mj_data = mujoco.MjData(mj_model)
     mjx_model = mjx.put_model(mj_model)
@@ -110,7 +109,7 @@ if __name__ == "__main__":
 
     # compute some sim and control parameters
     sim_step_dt = mjx_model.opt.timestep
-    sim_steps_per_ctrl = config.physics_steps_per_control_step
+    sim_steps_per_ctrl = env.config.physics_steps_per_control_step
     sim_step_counter = 0
 
     # initial state
