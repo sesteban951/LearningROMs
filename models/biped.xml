@@ -2,7 +2,7 @@
 <mujoco model="biped">
 
 	<!-- Simulation Parameters -->
-	<option solver="Newton" integrator="RK4" timestep="0.002" iterations="20" ls_iterations="20" cone="elliptic">
+	<option solver="Newton" integrator="RK4" timestep="0.005" iterations="20" ls_iterations="20" cone="elliptic">
 		<flag eulerdamp="disable"/>
 	</option>
 
@@ -11,7 +11,7 @@
 
 	<!-- Default properties -->
     <default>
-        <joint damping="0.1" armature="0.00" frictionloss="0.1"/>
+        <joint damping="1.0" armature="0.00" frictionloss="0.1"/>
         <geom contype="0" conaffinity="0"/>
     </default>
 
@@ -22,7 +22,7 @@
     </asset>
 
     <!-- Memory settings (default is 1000) -->
-    <size nstack="3000" />
+    <!-- <size nstack="3000" /> -->
 
 	<!-- Robot -->
 	<worldbody>
@@ -87,10 +87,10 @@
 
     <!-- Actuators -->
 	<actuator>
-		<motor name="hip_left_motor" joint="left_hip_joint" ctrllimited="true" ctrlrange="-1 1" gear="50"/>
-    	<motor name="knee_left_motor" joint="left_knee_joint" ctrllimited="true" ctrlrange="-1 1" gear="50"/>
-		<motor name="hip_right_motor" joint="right_hip_joint" ctrllimited="true" ctrlrange="-1 1" gear="50"/>
-		<motor name="knee_right_motor" joint="right_knee_joint" ctrllimited="true" ctrlrange="-1 1" gear="50"/>
+		<motor name="hip_left_motor" joint="left_hip_joint" ctrllimited="true" ctrlrange="-1 1" gear="25"/>
+    	<motor name="knee_left_motor" joint="left_knee_joint" ctrllimited="true" ctrlrange="-1 1" gear="25"/>
+		<motor name="hip_right_motor" joint="right_hip_joint" ctrllimited="true" ctrlrange="-1 1" gear="25"/>
+		<motor name="knee_right_motor" joint="right_knee_joint" ctrllimited="true" ctrlrange="-1 1" gear="25"/>
 	</actuator>
 
     <!-- default configuration (when you press "Load key" button) -->

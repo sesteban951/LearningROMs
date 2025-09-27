@@ -155,11 +155,12 @@ if __name__ == "__main__":
     # env = envs.get_environment("biped_basic")
     env = envs.get_environment("biped")
     policy_network_config = MLPConfig(
-        layer_sizes=(512, 256, 128, 2*env.action_size), # policy hidden layer sizes
+        layer_sizes=(256, 256, 256, 2*env.action_size), # policy hidden layer sizes
         activation_fn_name="tanh",                           # activation function
+        # activate_final=True
     )
     value_network_config = MLPConfig(
-        layer_sizes=(512, 256, 128, 1),  # value hidden layer sizes
+        layer_sizes=(512, 512, 512, 1),  # value hidden layer sizes
         activation_fn_name="tanh",                 # activation function
     )
     network_wrapper = BraxPPONetworksWrapper(
@@ -168,10 +169,10 @@ if __name__ == "__main__":
         action_distribution=distribution.NormalTanhDistribution
     )
     ppo_config = dict(
-        num_timesteps=100_000_000,      # total training timesteps
+        num_timesteps=50_000_000,      # total training timesteps
         num_evals=20,                  # number of evaluations
         reward_scaling=1.0,            # reward scale
-        episode_length=1000,            # max episode length
+        episode_length=600,            # max episode length
         normalize_observations=True,   # normalize observations
         action_repeat=1,               # action repeat
         unroll_length=20,              # PPO unroll length
