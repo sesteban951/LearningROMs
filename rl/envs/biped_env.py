@@ -36,7 +36,7 @@ class BipedConfig:
     cost_termination: float = 100.0      # cost at termination (if falls)
 
     # desired values
-    base_pos_z_des: float = 0.8  # desired center of mass height
+    base_pos_z_des: float = 0.82  # desired center of mass height
     base_vel_x_des: float = 0.5   # desired forward velocity
     theta_des: float = -0.1   # desired torso lean angle
     hip_des: float = 0.22     # desired hip joint angle
@@ -52,6 +52,8 @@ class BipedConfig:
     min_steps_before_done: int = 5   # tiny grace period after reset
 
     # Ranges for sampling initial conditions
+    lb_base_height: float = 0.75  # base height pos limits
+    ub_base_height: float = 0.85
     lb_base_theta_pos: float = -jnp.pi / 6.0  # base theta pos limits
     ub_base_theta_pos: float =  jnp.pi / 6.0
     lb_base_cart_vel: float = -0.1     # base cart vel limits
@@ -69,7 +71,8 @@ class BipedConfig:
 class BipedEnv(PipelineEnv):
     """
     Environment for training a planar biped walking task.
-    Close to: https://gymnasium.farama.org/environments/mujoco/walker2d/
+    NOTE: Try to follow some stuff from Mujoco Playground g1/joystick.py example
+          https://github.com/google-deepmind/mujoco_playground/blob/main/mujoco_playground/_src/locomotion/g1/joystick.py
 
     States: x = (base_pos, base_theta, joint_pos, base_vel, base_theta_dot, joint_vel), shape=(14,)
     Actions: a = (hip_left, knee_left, hip_right, knee_right), the torques applied to the joints, shape=(4,)
@@ -97,6 +100,24 @@ class BipedEnv(PipelineEnv):
         self.qpos_stand = jnp.array(mj_model.key_qpos[key_id])
         self.q_joints_stand = self.qpos_stand[3:]  # joint positions only
 
+        # build the limits vectors
+        self.q_pos_lb = jnp.array([-0.01, self.config.lb_base_height,
+                                   self.config.lb_base_theta_pos,
+                                   self.config.lb_hip_joint_pos, self.config.lb_knee_joint_pos,
+                                   self.config.lb_hip_joint_pos, self.config.lb_knee_joint_pos])
+        self.q_pos_ub = jnp.array([ 0.01, self.config.ub_base_height,
+                                   self.config.ub_base_theta_pos,
+                                   self.config.ub_hip_joint_pos, self.config.ub_knee_joint_pos,
+                                   self.config.ub_hip_joint_pos, self.config.ub_knee_joint_pos])
+        self.q_vel_lb = jnp.array([self.config.lb_base_cart_vel, self.config.lb_base_cart_vel,
+                                   self.config.lb_base_theta_vel,
+                                   self.config.lb_joint_vel, self.config.lb_joint_vel,
+                                   self.config.lb_joint_vel, self.config.lb_joint_vel])
+        self.q_vel_ub = jnp.array([self.config.ub_base_cart_vel, self.config.ub_base_cart_vel,
+                                   self.config.ub_base_theta_vel,
+                                   self.config.ub_joint_vel, self.config.ub_joint_vel,
+                                   self.config.ub_joint_vel, self.config.ub_joint_vel])
+        
         # foot touch sensors
         left_foot_touch_sensor_name = "left_foot_touch"
         right_foot_touch_sensor_name = "right_foot_touch"
@@ -135,38 +156,17 @@ class BipedEnv(PipelineEnv):
         # split the rng to sample unique initial conditions
         rng, rng1, rng2 = jax.random.split(rng, 3)
 
-        # # sample generalized position
-        # q_pos_lb = jnp.array([-0.01, 0.75, 
-        #                       self.config.lb_base_theta_pos,
-        #                       self.config.lb_hip_joint_pos,
-        #                       self.config.lb_knee_joint_pos,
-        #                       self.config.lb_hip_joint_pos,
-        #                       self.config.lb_knee_joint_pos])
-        # q_pos_ub = jnp.array([0.01, 0.85,
-        #                       self.config.ub_base_theta_pos,
-        #                       self.config.ub_hip_joint_pos,
-        #                       self.config.ub_knee_joint_pos,
-        #                       self.config.ub_hip_joint_pos,
-        #                       self.config.ub_knee_joint_pos])
+        # uniform sample within the limits
         # qpos = jax.random.uniform(rng1, (7,), minval=q_pos_lb, maxval=q_pos_ub)
-
-        # # sample the generalized velocity
-        # q_vel_lb = jnp.array([self.config.lb_base_cart_vel, self.config.lb_base_cart_vel, 
-        #                       self.config.lb_base_theta_vel,
-        #                       self.config.lb_joint_vel,
-        #                       self.config.lb_joint_vel,
-        #                       self.config.lb_joint_vel,
-        #                       self.config.lb_joint_vel])
-        # q_vel_ub = jnp.array([self.config.ub_base_cart_vel, self.config.ub_base_cart_vel, 
-        #                       self.config.ub_base_theta_vel,
-        #                       self.config.ub_joint_vel,
-        #                       self.config.ub_joint_vel,
-        #                       self.config.ub_joint_vel,
-        #                       self.config.ub_joint_vel])
         # qvel = jax.random.uniform(rng2, (7,), minval=q_vel_lb, maxval=q_vel_ub)
 
-        qpos = self.qpos_stand + 0.1*jax.random.normal(rng1, self.qpos_stand.shape)
-        qvel = 0.01*jax.random.normal(rng2, self.qpos_stand.shape)
+        # sample around the standing pose
+        qpos = self.qpos_stand + 0.25*jax.random.normal(rng1, self.qpos_stand.shape)
+        qvel = 0.025*jax.random.normal(rng2, self.qpos_stand.shape)
+
+        # clip to be within the limits
+        qpos = jnp.clip(qpos, self.q_pos_lb, self.q_pos_ub)
+        qvel = jnp.clip(qvel, self.q_vel_lb, self.q_vel_ub)
 
         # reset the physics state
         data = self.pipeline_init(qpos, qvel)
@@ -359,13 +359,13 @@ class BipedEnv(PipelineEnv):
         sin_phase, cos_phase, _, _ = self._compute_phase(data.time)
 
         # compute contacts
-        left_in_contact, right_in_contact = self._compute_foot_contact(data)
-        left_in_contact = jnp.array([left_in_contact])   # shape (1,)
-        right_in_contact = jnp.array([right_in_contact]) # shape (1,)
-        contacts = jnp.concatenate([left_in_contact, right_in_contact])  # shape (2,)
+        # left_in_contact, right_in_contact = self._compute_foot_contact(data)
+        # left_in_contact = jnp.array([left_in_contact])   # shape (1,)
+        # right_in_contact = jnp.array([right_in_contact]) # shape (1,)
+        # contacts = jnp.concatenate([left_in_contact, right_in_contact])  # shape (2,)
 
         # compute torques
-        current_torques = data.ctrl  # shape (4,)
+        # current_torques = data.ctrl  # shape (4,)
 
         # compute the observation
         obs = jnp.concatenate([position,        # base pos + joint pos

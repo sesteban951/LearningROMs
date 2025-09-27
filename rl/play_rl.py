@@ -88,7 +88,7 @@ if __name__ == "__main__":
     # Load the environment and policy parameters
     # # env = envs.get_environment("biped_basic")
     env = envs.get_environment("biped")
-    policy_data_path = "./rl/policy/biped_policy_2025_09_26_21_46_45.pkl"
+    policy_data_path = "./rl/policy/biped_policy_2025_09_27_14_52_58.pkl"
 
     #----------------------------- POLICY SETUP -----------------------------#
 
@@ -143,6 +143,7 @@ if __name__ == "__main__":
 
             # parse contact information
             contact = parse_contact(mj_data)
+            # print(act)
 
             # query controller at the desired rate
             if sim_step_counter % sim_steps_per_ctrl == 0:
