@@ -30,8 +30,9 @@ class BipedConfig:
     reward_joint_pos: float = 0.1      # joint position 
     reward_joint_vel: float = 1e-3     # joint velocity 
     reward_joint_acc: float = 2.5e-7   # joint acceleration
-    reward_action_rate: float = 0.01   # control cost
-    reward_contact: float = 0.01       # foot contact reward
+    reward_action_rate: float = 0.005   # control cost
+    reward_foot_contact: float = 0.1       # foot contact reward
+    reward_foot_slip: float = 0.1          # foot slip penalty
     reward_alive: float = 1.0         # alive reward bonus (if not terminated)
     cost_termination: float = 100.0      # cost at termination (if falls)
 
@@ -78,6 +79,7 @@ class BipedConfig:
     kd_hip: float = 5.0
     kp_knee: float = 200.0
     kd_knee: float = 5.0
+
 
 # environment class
 class BipedEnv(PipelineEnv):
@@ -149,15 +151,21 @@ class BipedEnv(PipelineEnv):
         # build gear ratio vector
         self.gear = jnp.array(mj_model.actuator_gear[:, 0])  # shape (4,)
 
+        # site ids
+        self.left_site_id  = mujoco.mj_name2id(mj_model, mujoco.mjtObj.mjOBJ_SITE, "left_foot_site")
+        self.right_site_id = mujoco.mj_name2id(mj_model, mujoco.mjtObj.mjOBJ_SITE, "right_foot_site")
+
         # foot touch sensors
-        left_foot_touch_sensor_name = "left_foot_touch"
-        right_foot_touch_sensor_name = "right_foot_touch"
-        left_foot_sensor_id = mujoco.mj_name2id(mj_model, mujoco.mjtObj.mjOBJ_SENSOR, left_foot_touch_sensor_name)
-        right_foot_sensor_id = mujoco.mj_name2id(mj_model, mujoco.mjtObj.mjOBJ_SENSOR, right_foot_touch_sensor_name)
-        self.left_adr = mj_model.sensor_adr[left_foot_sensor_id]
-        self.right_adr = mj_model.sensor_adr[right_foot_sensor_id]
-        self.left_dim = mj_model.sensor_dim[left_foot_sensor_id]
-        self.right_dim = mj_model.sensor_dim[right_foot_sensor_id]
+        left_foot_sensor_id = mujoco.mj_name2id(mj_model, mujoco.mjtObj.mjOBJ_SENSOR, "left_foot_touch")
+        right_foot_sensor_id = mujoco.mj_name2id(mj_model, mujoco.mjtObj.mjOBJ_SENSOR, "right_foot_touch")
+        self.left_adr = mj_model.sensor_adr[left_foot_sensor_id]    # dim should be 1
+        self.right_adr = mj_model.sensor_adr[right_foot_sensor_id]  # dim should be 1
+
+        # foot linear velocity sensors
+        lvel_id = mujoco.mj_name2id(mj_model, mujoco.mjtObj.mjOBJ_SENSOR, "left_foot_linvel")
+        rvel_id = mujoco.mj_name2id(mj_model, mujoco.mjtObj.mjOBJ_SENSOR, "right_foot_linvel")
+        self.lvel_adr = mj_model.sensor_adr[lvel_id]    # dim should be 3
+        self.rvel_adr = mj_model.sensor_adr[rvel_id]    # dim should be 3
 
         # instantiate the parent class
         super().__init__(
@@ -170,6 +178,8 @@ class BipedEnv(PipelineEnv):
 
         # print message
         print(f"Initialized BipedBasicEnv with model [{self.config.model_path}].")
+
+    ######################################### RESET ###############################################
 
     # reset function
     def reset(self, rng):
@@ -221,7 +231,8 @@ class BipedEnv(PipelineEnv):
                    "reward_joint_vel": 0.0,
                    "reward_joint_acc": 0.0,
                    "reward_action_rate": 0.0,
-                   "reward_contact": 0.0,
+                   "reward_foot_contact": 0.0,
+                   "reward_foot_slip": 0.0,
                    "reward_alive": 0.0,
                    "cost_termination": 0.0
                    }
@@ -229,7 +240,8 @@ class BipedEnv(PipelineEnv):
         # state info - MODIFIED: store previous action
         info = {"rng": rng,
                 "step": 0,
-                "prev_action": prev_action}
+                "prev_action": prev_action,
+                }
         
         return State(pipeline_state=data,
                      obs=obs,
@@ -237,6 +249,8 @@ class BipedEnv(PipelineEnv):
                      done=done,
                      metrics=metrics,
                      info=info)
+    
+    ######################################### STEP ###############################################
 
     # physics step function
     def step(self, state, action):
@@ -291,8 +305,11 @@ class BipedEnv(PipelineEnv):
         left_should_be_in_stance = left_phase < self.config.phase_threshold
         right_should_be_in_stance = right_phase < self.config.phase_threshold
         left_in_contact, right_in_contact = self._compute_foot_contact(data)
-        left_match  = jnp.logical_not(jnp.logical_xor(left_in_contact.astype(bool), left_should_be_in_stance))
-        right_match = jnp.logical_not(jnp.logical_xor(right_in_contact.astype(bool), right_should_be_in_stance))
+        left_match  = jnp.logical_not(jnp.logical_xor(left_in_contact,  left_should_be_in_stance))
+        right_match = jnp.logical_not(jnp.logical_xor(right_in_contact, right_should_be_in_stance))
+
+        # foot slip penalty
+        foot_slip = self._compute_feet_slip(data)
 
         # compute errors
         base_pos_z_err = jnp.square(base_pos_z - self.config.base_pos_z_des).sum()
@@ -317,8 +334,9 @@ class BipedEnv(PipelineEnv):
         reward_joint_vel = -self.config.reward_joint_vel * joint_vel_err
         reward_joint_acc = -self.config.reward_joint_acc * joint_acc_err
         reward_action_rate = -self.config.reward_action_rate * action_rate_err
-        reward_contact = (left_match.astype(jnp.float32) +
-                          right_match.astype(jnp.float32)) * self.config.reward_contact / 2.0
+        reward_foot_contact = (left_match.astype(jnp.float32) + 
+                               right_match.astype(jnp.float32)) * self.config.reward_foot_contact / 2.0
+        reward_foot_slip = -self.config.reward_foot_slip * foot_slip
 
         # termination conditions
         below_height = base_pos_z < self.config.min_base_height
@@ -334,27 +352,29 @@ class BipedEnv(PipelineEnv):
         # if not terminated, give a small alive bonus
         reward_alive = self.config.reward_alive * (1.0 - done)
 
-        # MODIFIED: compute the total reward (now includes action rate)
+        # compute the total reward
         reward = (reward_base_pos_z +
                   reward_base_vel_x   + reward_base_vel_z +
                   reward_base_ang_pos + reward_base_ang_vel +
                   reward_joint_pos + reward_joint_vel + reward_joint_acc +
-                  reward_action_rate   +  # ADDED
-                  reward_contact   + reward_alive + cost_termination)
+                  reward_action_rate  +  
+                  reward_foot_contact + reward_foot_slip +
+                  reward_alive + cost_termination)
 
         # update the metrics and info dictionaries
-        state.metrics["reward_base_pos_z"]  = reward_base_pos_z
-        state.metrics["reward_base_vel_x"]  = reward_base_vel_x
-        state.metrics["reward_base_vel_z"]  = reward_base_vel_z
+        state.metrics["reward_base_pos_z"]   = reward_base_pos_z
+        state.metrics["reward_base_vel_x"]   = reward_base_vel_x
+        state.metrics["reward_base_vel_z"]   = reward_base_vel_z
         state.metrics["reward_base_ang_pos"] = reward_base_ang_pos
         state.metrics["reward_base_ang_vel"] = reward_base_ang_vel
-        state.metrics["reward_joint_pos"]   = reward_joint_pos
-        state.metrics["reward_joint_vel"]   = reward_joint_vel
-        state.metrics["reward_joint_acc"]   = reward_joint_acc
-        state.metrics["reward_action_rate"] = reward_action_rate
-        state.metrics["reward_contact"]     = reward_contact
-        state.metrics["reward_alive"]       = reward_alive
-        state.metrics["cost_termination"]   = cost_termination
+        state.metrics["reward_joint_pos"]    = reward_joint_pos
+        state.metrics["reward_joint_vel"]    = reward_joint_vel
+        state.metrics["reward_joint_acc"]    = reward_joint_acc
+        state.metrics["reward_action_rate"]  = reward_action_rate
+        state.metrics["reward_foot_contact"] = reward_foot_contact
+        state.metrics["reward_foot_slip"]    = reward_foot_slip
+        state.metrics["reward_alive"]        = reward_alive
+        state.metrics["cost_termination"]    = cost_termination
         
         # update the state info
         state.info["step"] += 1
@@ -364,6 +384,8 @@ class BipedEnv(PipelineEnv):
                              obs=obs,
                              reward=reward,
                              done=done)
+    
+    ####################################### OBSERVATION #############################################
 
     # internal function to compute the observation
     def _compute_obs(self, data, prev_action):
@@ -407,6 +429,8 @@ class BipedEnv(PipelineEnv):
 
         return obs
     
+    ########################################## UTILS ################################################
+
     # helper to compute if the feet are in contact with the ground
     def _compute_foot_contact(self, data):
         """
@@ -415,21 +439,50 @@ class BipedEnv(PipelineEnv):
         Args:
             data: brax.physics.base.State object
                   The physics state of the environment.
-
         Returns:
-            left_in_contact: jax.Array
-                             Whether the left foot is in contact with the ground, shape (1,)
-            right_in_contact: jax.Array
-                              Whether the right foot is in contact with the ground, shape (1,)
+            left_in_contact: bool
+                             Whether the left foot is in contact with the ground.
+            right_in_contact: bool
+                              Whether the right foot is in contact with the ground.
         """
         # foot contact flags
         sd = data.sensordata  # mjx exposes sensordata
-        l_touch = sd[self.left_adr : self.left_adr + self.left_dim][0]
-        r_touch = sd[self.right_adr: self.right_adr + self.right_dim][0]
-        left_in_contact  = jnp.where(l_touch > 1e-3, 1.0, 0.0)
-        right_in_contact = jnp.where(r_touch > 1e-3, 1.0, 0.0)
+
+        # return left_in_contact, right_in_contact
+        l_val = sd[self.left_adr ]   # should be dim 1
+        r_val = sd[self.right_adr]   # should be dim 1
+        left_in_contact  = l_val > 1e-3
+        right_in_contact = r_val > 1e-3
 
         return left_in_contact, right_in_contact
+    
+    # compute if there is foot slip 
+    def _compute_feet_slip(self, data):
+        """
+        Compute foot slipping while in contact
+        
+        Args:
+            data: brax.physics.base.State object, The physics state of the environment before the step.
+        Returns:
+            slip_cost: jax.Array, The computed slip cost, shape ()
+        """
+
+        # contact booleans from your touch sensors
+        left_c, right_c = self._compute_foot_contact(data)  # 0/1 scalars
+
+        sd = data.sensordata
+        vL = sd[self.lvel_adr : self.lvel_adr + 3]  # (3,)
+        vR = sd[self.rvel_adr : self.rvel_adr + 3]  # (3,)
+
+        # only consider x direction slip
+        vL_x = jnp.abs(vL[0])
+        vR_x = jnp.abs(vR[0])
+
+        # penalize slip only when in contact
+        slip_cost = vL_x * left_c + vR_x * right_c
+
+        return slip_cost
+               
 
     # helper function to compute the phase
     def _compute_phase(self, t):
@@ -488,6 +541,13 @@ class BipedEnv(PipelineEnv):
     def _q_des_to_torque(self, data0, q_des):
         """
         Convert a joint position target to a torque using PD control.
+
+        Args:
+            data0: brax.physics.base.State object, The physics state of the environment before the step.
+            q_des: jax.Array, The desired joint positions, shape (4,).
+        Returns:
+            u: jax.Array, The actuator controls to be applied, shape (4,).
+            tau: jax.Array, The computed torques before mapping to actuator controls, shape (4,).
         """
         # get current joint state
         q_pos = data0.qpos[3:]
@@ -502,6 +562,8 @@ class BipedEnv(PipelineEnv):
         u = jnp.clip(u, self.ctrl_min, self.ctrl_max)  # clip to control range to [-1, 1]
 
         return u, tau
+    
+    ########################################## REWARD ################################################
 
     @property
     def observation_size(self):

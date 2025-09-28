@@ -81,8 +81,13 @@
 
     <!-- Sensors -->
     <sensor>
-        <touch name="left_foot_touch"  site="left_foot_site"/>
+        <!-- foot contact sensor -->
+        <touch name="left_foot_touch"  site="left_foot_site"/>          
         <touch name="right_foot_touch" site="right_foot_site"/>
+
+        <!-- foot linear velocity in global coord-->
+        <framelinvel name="left_foot_linvel"  objtype="site" objname="left_foot_site"/>
+        <framelinvel name="right_foot_linvel" objtype="site" objname="right_foot_site"/>
     </sensor>
 
     <!-- Actuators -->
