@@ -60,6 +60,25 @@ def parse_contact(data):
 
     return foot_in_contact
 
+def pos_act_to_ctrl(dq, data, env):
+    """
+    Convert Δq action -> absolute q_des -> PD torque -> actuator ctrl.
+    Args:
+        dq:   Δq action (jax/np array, shape (env.action_size,))
+        data: mjx_data or mj_data (must have .qpos and .qvel), pre-step state
+        env:  BipedEnv
+    Returns:
+        ctrl: actuator controls (np array) to write into mj_data.ctrl
+    """
+    # conver tot jnp array
+    dq = jnp.asarray(dq)
+    # Δq -> q_des (around standing), clipped to joint limits
+    q_des = env._action_to_q_des(dq)
+    # PD (uses pre-step state) -> torque -> ctrl (clipped)
+    ctrl, _tau = env._q_des_to_torque(data, q_des)
+
+    return np.asarray(ctrl)
+
 #################################################################
 
 if __name__ == "__main__":
@@ -88,7 +107,7 @@ if __name__ == "__main__":
     # Load the environment and policy parameters
     # # env = envs.get_environment("biped_basic")
     env = envs.get_environment("biped")
-    policy_data_path = "./rl/policy/biped_policy_2025_09_27_14_52_58.pkl"
+    policy_data_path = "./rl/policy/biped_policy_2025_09_27_19_00_59.pkl"
 
     #----------------------------- POLICY SETUP -----------------------------#
 
@@ -123,60 +142,120 @@ if __name__ == "__main__":
     wall_start = time.time()
     last_render = 0.0
 
-    act = np.zeros(mj_model.nu)
+    # # initial action and control
+    # act = np.zeros(env.action_size, dtype=np.float32)  # initial action
+    # ctrl = np.zeros(mj_model.nu, dtype=np.float32)     # initial control
 
-    # start the interactive simulation
+    # # start the interactive simulation
+    # with mujoco.viewer.launch_passive(mj_model, mj_data) as viewer:
+
+    #     # Set camera parameters
+    #     viewer.cam.lookat[:] = np.array([0.0, 0.0, 0.8])   # look at x, y, z
+    #     viewer.cam.distance = 3.0                           # distance from lookat
+    #     viewer.cam.elevation = -20.0                        # tilt down/up
+    #     viewer.cam.azimuth = 90.0                           # rotate around lookat
+
+    #     while viewer.is_running():
+
+    #         # get the current sim time and state
+    #         t_sim = mj_data.time
+
+    #         print(f"Sim Time: {t_sim:.3f} s")
+
+    #         # parse contact information
+    #         contact = parse_contact(mj_data)
+    #         # print(act)
+
+    #         # query controller at the desired rate
+    #         if sim_step_counter % sim_steps_per_ctrl == 0:
+
+    #             print(f"Sim Time: {t_sim:.3f} s")
+
+    #             # get current state
+    #             qpos = jnp.array(mj_data.qpos)
+    #             qvel = jnp.array(mj_data.qvel)
+
+    #             # update the mjx_data
+    #             mjx_data = mjx_data.replace(qpos=qpos, qvel=qvel)
+
+    #             # compute the observation
+    #             if env.robot_name == "biped":
+    #                 # for biped, pass in previous action as well
+    #                 obs = obs_fn(mjx_data, act)   # obs is a jax array
+    #             else:
+    #                 obs = obs_fn(mjx_data)      # obs is a jax array
+
+    #             # compute the action
+    #             act = policy_fn(obs)  # act is a jax array
+
+    #             # biped case the action is position based, convert to control
+    #             if env.robot_name == "biped":
+    #                 act = np.array(act)      # convert to numpy array
+    #                 ctrl = pos_act_to_ctrl(act, mj_data, env)
+    #                 ctrl = np.array(ctrl)      # convert to numpy array
+    #             else:
+                    
+    #                 ctrl = np.array(act)      # convert to numpy array
+            
+    #                 # update the controls
+    #                 mj_data.ctrl[:] = ctrl
+
+    #         # increment counter
+    #         sim_step_counter += 1
+
+    #         # step the simulation
+    #         mujoco.mj_step(mj_model, mj_data)
+
+    #         # sync the viewer
+    #         viewer.sync()
+
+    #         # sync the sim time with the wall clock time
+    #         wall_elapsed = time.time() - wall_start
+    #         if t_sim > wall_elapsed:
+    #             time.sleep(t_sim - wall_elapsed)
+
+        # initial action (Δq) and control
+    dq_prev = np.zeros(env.action_size, dtype=np.float32)  # previous Δq
+    ctrl = np.zeros(mj_model.nu, dtype=np.float32)         # actuator control
+
     with mujoco.viewer.launch_passive(mj_model, mj_data) as viewer:
-
-        # Set camera parameters
-        viewer.cam.lookat[:] = np.array([0.0, 0.0, 0.8])   # look at x, y, z
-        viewer.cam.distance = 3.0                           # distance from lookat
-        viewer.cam.elevation = -20.0                        # tilt down/up
-        viewer.cam.azimuth = 90.0                           # rotate around lookat
+        # ... camera setup ...
 
         while viewer.is_running():
-
-            # get the current sim time and state
             t_sim = mj_data.time
-
-            print(f"Sim Time: {t_sim:.3f} s")
-
-            # parse contact information
-            contact = parse_contact(mj_data)
-            # print(act)
 
             # query controller at the desired rate
             if sim_step_counter % sim_steps_per_ctrl == 0:
-
-                print(f"Sim Time: {t_sim:.3f} s")
-
-                # get current state
+                # sync mjx_data with current MuJoCo state (PRE-STEP state!)
                 qpos = jnp.array(mj_data.qpos)
                 qvel = jnp.array(mj_data.qvel)
-
-                # update the mjx_data
                 mjx_data = mjx_data.replace(qpos=qpos, qvel=qvel)
 
-                # compute the observation
-                obs = obs_fn(mjx_data, act)   # obs is a jax array
-                # obs = obs_fn(mjx_data)   # obs is a jax array
+                # build observation
+                if env.robot_name == "biped":
+                    obs = obs_fn(mjx_data, dq_prev)     # pass previous Δq
+                else:
+                    obs = obs_fn(mjx_data)
 
-                # compute the action
-                act = policy_fn(obs)  # act is a jax array
-            
-                # update the controls
-                mj_data.ctrl[:] = np.array(act)
+                # policy action
+                action = policy_fn(obs)                 # jax array
 
-            # increment counter
+                if env.robot_name == "biped":
+                    # action is Δq → convert to actuator control
+                    dq = np.array(action)               # Δq for logging/next obs
+                    ctrl = pos_act_to_ctrl(dq, mjx_data, env)   # use PRE-STEP mjx_data
+                    mj_data.ctrl[:] = ctrl              # send controls
+                    dq_prev = dq                        # keep Δq for next obs
+                else:
+                    # torque-control envs: send directly
+                    ctrl = np.array(action)
+                    mj_data.ctrl[:] = ctrl
+
             sim_step_counter += 1
-
-            # step the simulation
             mujoco.mj_step(mj_model, mj_data)
-
-            # sync the viewer
             viewer.sync()
 
-            # sync the sim time with the wall clock time
+            # (optional) wall-clock pacing
             wall_elapsed = time.time() - wall_start
             if t_sim > wall_elapsed:
                 time.sleep(t_sim - wall_elapsed)

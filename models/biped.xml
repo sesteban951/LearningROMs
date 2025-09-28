@@ -22,7 +22,7 @@
     </asset>
 
     <!-- Memory settings (default is 1000) -->
-    <!-- <size nstack="3000" /> -->
+    <size nstack="3000" />
 
 	<!-- Robot -->
 	<worldbody>

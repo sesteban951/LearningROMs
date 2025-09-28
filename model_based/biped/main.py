@@ -109,7 +109,7 @@ class Controller:
         self.u_max = 0.4
 
         # feedforward bias input for stepping
-        self.u_bias = -0.035
+        self.u_bias = -0.025
 
         # which foot stepping controller to use
         self.foot_placement_ctrl = "LIP"   # "Raibert" or "LIP"

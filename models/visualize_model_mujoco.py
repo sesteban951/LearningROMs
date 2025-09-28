@@ -47,7 +47,12 @@ print("\nNumber of actuators:", model.nu)
 for i in range(model.nu):
     name = mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_ACTUATOR, i)
     atype = model.actuator_trntype[i]  # transmission type
+    lower, upper = model.actuator_ctrlrange[i]
+    gear = model.actuator_gear[i, 0]
     print(f"    Actuator {i} name:", name)
+    print(f"    Actuator {i} transmission type:", atype)
+    print(f"    Control limits: [{lower:.4f}, {upper:.4f}]")
+    print(f"    Gear ratio: {gear}")
 
 # bodies
 print("\nNumber of bodies:", model.nbody)

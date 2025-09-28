@@ -54,18 +54,30 @@ class BipedConfig:
     # Ranges for sampling initial conditions
     lb_base_height: float = 0.75  # base height pos limits
     ub_base_height: float = 0.85
-    lb_base_theta_pos: float = -jnp.pi / 6.0  # base theta pos limits
-    ub_base_theta_pos: float =  jnp.pi / 6.0
-    lb_base_cart_vel: float = -0.1     # base cart vel limits
-    ub_base_cart_vel: float =  0.1
-    lb_base_theta_vel: float = -0.25    # base theta vel limits
-    ub_base_theta_vel: float =  0.25
-    lb_hip_joint_pos: float =  (-jnp.pi / 2.0) * 0.2  # hip joint pos limits
-    ub_hip_joint_pos: float =  ( jnp.pi / 2.0) * 0.2
-    lb_knee_joint_pos: float = (-2.4) * 0.1    # knee joint pos limits
+    lb_base_theta_pos: float = -jnp.pi  # base theta pos limits
+    ub_base_theta_pos: float =  jnp.pi
+    lb_hip_joint_pos: float =  -jnp.pi  # hip joint pos limits
+    ub_hip_joint_pos: float =   jnp.pi
+    lb_knee_joint_pos: float = -2.4   # knee joint pos limits
     ub_knee_joint_pos: float =  0.0
-    lb_joint_vel: float = -0.25     # joint vel limits
-    ub_joint_vel: float =  0.25
+    
+    lb_base_cart_vel_x: float = -0.5     # base cart vel limits
+    ub_base_cart_vel_x: float =  0.5
+    lb_base_cart_vel_z: float = -0.1     # base cart vel z limits
+    ub_base_cart_vel_z: float =  0.1
+    lb_base_theta_vel: float = -3.14    # base theta vel limits
+    ub_base_theta_vel: float =  3.14
+    lb_joint_vel: float = -3.14     # joint vel limits
+    ub_joint_vel: float =  3.14
+
+    # position action scale, action = (q_des - q_nom) / pos_action_scale
+    pos_action_scale: float = 0.25 
+
+    # PD gains
+    kp_hip: float = 200.0
+    kd_hip: float = 5.0
+    kp_knee: float = 200.0
+    kd_knee: float = 5.0
 
 # environment class
 class BipedEnv(PipelineEnv):
@@ -98,7 +110,6 @@ class BipedEnv(PipelineEnv):
         key_name = "standing"
         key_id = mujoco.mj_name2id(mj_model, mujoco.mjtObj.mjOBJ_KEY, key_name)
         self.qpos_stand = jnp.array(mj_model.key_qpos[key_id])
-        self.q_joints_stand = self.qpos_stand[3:]  # joint positions only
 
         # build the limits vectors
         self.q_pos_lb = jnp.array([-0.01, self.config.lb_base_height,
@@ -109,15 +120,35 @@ class BipedEnv(PipelineEnv):
                                    self.config.ub_base_theta_pos,
                                    self.config.ub_hip_joint_pos, self.config.ub_knee_joint_pos,
                                    self.config.ub_hip_joint_pos, self.config.ub_knee_joint_pos])
-        self.q_vel_lb = jnp.array([self.config.lb_base_cart_vel, self.config.lb_base_cart_vel,
+        self.q_vel_lb = jnp.array([self.config.lb_base_cart_vel_x, self.config.lb_base_cart_vel_z,
                                    self.config.lb_base_theta_vel,
                                    self.config.lb_joint_vel, self.config.lb_joint_vel,
                                    self.config.lb_joint_vel, self.config.lb_joint_vel])
-        self.q_vel_ub = jnp.array([self.config.ub_base_cart_vel, self.config.ub_base_cart_vel,
+        self.q_vel_ub = jnp.array([self.config.ub_base_cart_vel_x, self.config.ub_base_cart_vel_z,
                                    self.config.ub_base_theta_vel,
                                    self.config.ub_joint_vel, self.config.ub_joint_vel,
                                    self.config.ub_joint_vel, self.config.ub_joint_vel])
         
+        # nominal joint positions (standing pose)
+        self.q_joints_nom = self.qpos_stand[3:]  # joint positions only
+
+        # joint position bounds
+        self.q_joints_pos_lb = self.q_pos_lb[3:]
+        self.q_joints_pos_ub = self.q_pos_ub[3:]
+
+        # build the PD gains vectors
+        self.kp = jnp.array([self.config.kp_hip, self.config.kp_knee, 
+                             self.config.kp_hip, self.config.kp_knee])
+        self.kd = jnp.array([self.config.kd_hip, self.config.kd_knee, 
+                             self.config.kd_hip, self.config.kd_knee])
+        
+        # get the contorl limits
+        self.ctrl_min = jnp.array(mj_model.actuator_ctrlrange[:, 0])  # shape (4,)
+        self.ctrl_max = jnp.array(mj_model.actuator_ctrlrange[:, 1])  # shape (4,)
+
+        # build gear ratio vector
+        self.gear = jnp.array(mj_model.actuator_gear[:, 0])  # shape (4,)
+
         # foot touch sensors
         left_foot_touch_sensor_name = "left_foot_touch"
         right_foot_touch_sensor_name = "right_foot_touch"
@@ -157,12 +188,12 @@ class BipedEnv(PipelineEnv):
         rng, rng1, rng2 = jax.random.split(rng, 3)
 
         # uniform sample within the limits
-        # qpos = jax.random.uniform(rng1, (7,), minval=q_pos_lb, maxval=q_pos_ub)
-        # qvel = jax.random.uniform(rng2, (7,), minval=q_vel_lb, maxval=q_vel_ub)
+        # qpos = jax.random.uniform(rng1, (7,), minval=self.q_pos_lb, maxval=self.q_pos_ub)
+        # qvel = jax.random.uniform(rng2, (7,), minval=self.q_vel_lb, maxval=self.q_vel_ub)
 
         # sample around the standing pose
         qpos = self.qpos_stand + 0.25*jax.random.normal(rng1, self.qpos_stand.shape)
-        qvel = 0.025*jax.random.normal(rng2, self.qpos_stand.shape)
+        qvel = 0.05*jax.random.normal(rng2, self.qpos_stand.shape)
 
         # clip to be within the limits
         qpos = jnp.clip(qpos, self.q_pos_lb, self.q_pos_ub)
@@ -221,10 +252,18 @@ class BipedEnv(PipelineEnv):
 
         # initial and final pipline state
         data0 = state.pipeline_state
-        data  = self.pipeline_step(data0, action)
 
         # MODIFIED: get previous action from state
         prev_action = state.info["prev_action"]
+
+        # Δq -> q_des (absolute target around standing)
+        q_des = self._action_to_q_des(action)
+
+        # PD torque control using pre-state before step
+        ctrl, _ = self._q_des_to_torque(data0, q_des)
+
+        # take a step in the physics
+        data = self.pipeline_step(data0, ctrl)
 
         # update the observations (now includes current action)
         obs = self._compute_obs(data, prev_action)
@@ -235,16 +274,13 @@ class BipedEnv(PipelineEnv):
         base_vel_z = data.qvel[1]
         base_ang_pos = data.qpos[2]
         base_ang_vel = data.qvel[2]
-        cos_theta = jnp.cos(base_ang_pos)
-        sin_theta = jnp.sin(base_ang_pos)
-        
         joint_pos = data.qpos[3:]
-        # joint_hip_left = data.qpos[3]
-        # joint_hip_right = data.qpos[5]
         joint_vel = data.qvel[3:]
         joint_acc = data.qacc[3:]
 
         # special angle error
+        cos_theta = jnp.cos(base_ang_pos)
+        sin_theta = jnp.sin(base_ang_pos)
         cos_theta_des = jnp.cos(self.config.theta_des)
         sin_theta_des = jnp.sin(self.config.theta_des)
         base_ang_pos_vec = jnp.array([cos_theta - cos_theta_des,
@@ -264,25 +300,23 @@ class BipedEnv(PipelineEnv):
         base_vel_z_err = jnp.square(base_vel_z).sum()
         base_ang_pos_err = jnp.square(base_ang_pos_vec).sum()
         base_ang_vel_err = jnp.square(base_ang_vel).sum()
-        # joint_pos_err = jnp.square(joint_hip_left - self.config.hip_des).sum() + jnp.square(joint_hip_right - self.config.hip_des).sum()
-        joint_pos_err = jnp.square(joint_pos - self.q_joints_stand).sum()
+        joint_pos_err = jnp.square(joint_pos - self.q_joints_nom).sum()
         joint_vel_err = jnp.square(joint_vel).sum()
         joint_acc_err = jnp.square(joint_acc).sum()
 
-        # ADDED: action rate error (difference from previous action)
+        # smooth Δq, action rate error (difference from previous action)
         action_rate_err = jnp.square(action - prev_action).sum()
 
         # compute the reward terms
         reward_base_pos_z = -self.config.reward_base_pos_z * base_pos_z_err
         reward_base_vel_x = -self.config.reward_base_vel_x * base_vel_x_err
-        # reward_base_vel_x = self.config.reward_base_vel_x * base_vel_x
         reward_base_vel_z = -self.config.reward_base_vel_z * base_vel_z_err
         reward_base_ang_pos = -self.config.reward_base_ang_pos * base_ang_pos_err
         reward_base_ang_vel = -self.config.reward_base_ang_vel * base_ang_vel_err
         reward_joint_pos = -self.config.reward_joint_pos * joint_pos_err
         reward_joint_vel = -self.config.reward_joint_vel * joint_vel_err
         reward_joint_acc = -self.config.reward_joint_acc * joint_acc_err
-        reward_action_rate = -self.config.reward_action_rate * action_rate_err  # ADDED
+        reward_action_rate = -self.config.reward_action_rate * action_rate_err
         reward_contact = (left_match.astype(jnp.float32) +
                           right_match.astype(jnp.float32)) * self.config.reward_contact / 2.0
 
@@ -309,18 +343,20 @@ class BipedEnv(PipelineEnv):
                   reward_contact   + reward_alive + cost_termination)
 
         # update the metrics and info dictionaries
-        state.metrics["reward_base_pos_z"] = reward_base_pos_z
-        state.metrics["reward_base_vel_x"] = reward_base_vel_x
-        state.metrics["reward_base_vel_z"] = reward_base_vel_z
+        state.metrics["reward_base_pos_z"]  = reward_base_pos_z
+        state.metrics["reward_base_vel_x"]  = reward_base_vel_x
+        state.metrics["reward_base_vel_z"]  = reward_base_vel_z
         state.metrics["reward_base_ang_pos"] = reward_base_ang_pos
         state.metrics["reward_base_ang_vel"] = reward_base_ang_vel
-        state.metrics["reward_joint_pos"] = reward_joint_pos
-        state.metrics["reward_joint_vel"] = reward_joint_vel
-        state.metrics["reward_joint_acc"] = reward_joint_acc
-        state.metrics["reward_action_rate"] = reward_action_rate  # ADDED
-        state.metrics["reward_contact"] = reward_contact
-        state.metrics["reward_alive"] = reward_alive
-        state.metrics["cost_termination"] = cost_termination
+        state.metrics["reward_joint_pos"]   = reward_joint_pos
+        state.metrics["reward_joint_vel"]   = reward_joint_vel
+        state.metrics["reward_joint_acc"]   = reward_joint_acc
+        state.metrics["reward_action_rate"] = reward_action_rate
+        state.metrics["reward_contact"]     = reward_contact
+        state.metrics["reward_alive"]       = reward_alive
+        state.metrics["cost_termination"]   = cost_termination
+        
+        # update the state info
         state.info["step"] += 1
         state.info["prev_action"] = action  # Store current action for next step
 
@@ -330,7 +366,7 @@ class BipedEnv(PipelineEnv):
                              done=done)
 
     # internal function to compute the observation
-    def _compute_obs(self, data, action):
+    def _compute_obs(self, data, prev_action):
         """
         Compute the observation from the physics state.
 
@@ -344,35 +380,28 @@ class BipedEnv(PipelineEnv):
                  The observation of the environment.
         """
 
-        # positions
+        # base positions
         base_height = data.qpos[1]
-        base_cos_theta = jnp.cos(data.qpos[2])
-        base_sin_theta = jnp.sin(data.qpos[2])
+        base_theta = data.qpos[2]
+        base_cos_theta = jnp.cos(base_theta)
+        base_sin_theta = jnp.sin(base_theta)
         base_pos = jnp.array([base_height, base_cos_theta, base_sin_theta]) # shape (3,)
-        joint_pos = data.qpos[3:]                                           # shape (4,)
-        position = jnp.concatenate([base_pos, joint_pos])                   # shape (7,)
+        
+        # joint positions
+        joint_pos = data.qpos[3:]                        # shape (4,)
+        joint_pos_rel = (joint_pos - self.q_joints_nom)  # shape (4,)
 
         # full velocity state
+        position = jnp.concatenate([base_pos, joint_pos_rel])                   # shape (7,)
         velocity = data.qvel   # shape (7,)
 
         # phase variable
         sin_phase, cos_phase, _, _ = self._compute_phase(data.time)
 
-        # compute contacts
-        # left_in_contact, right_in_contact = self._compute_foot_contact(data)
-        # left_in_contact = jnp.array([left_in_contact])   # shape (1,)
-        # right_in_contact = jnp.array([right_in_contact]) # shape (1,)
-        # contacts = jnp.concatenate([left_in_contact, right_in_contact])  # shape (2,)
-
-        # compute torques
-        # current_torques = data.ctrl  # shape (4,)
-
         # compute the observation
         obs = jnp.concatenate([position,        # base pos + joint pos
                                velocity,        # full gen velocity
-                               action,          # previous action
-                            #    current_torques, # current torques
-                            #    contacts,        # foot contact
+                               prev_action,     # previous action
                                sin_phase,       # phase variable
                                cos_phase])      # phase variable
 
@@ -432,6 +461,47 @@ class BipedEnv(PipelineEnv):
         right_phase = jnp.mod(phase + self.config.phase_offset, 1.0)
 
         return sin_phase, cos_phase, left_phase, right_phase
+    
+    # convert normalized position action to joint position target
+    def _action_to_q_des(self, action):
+        """
+        Map normalized Δq action to absolute joint target:
+            q_des = clip(q_nom + pos_action_scale * clip(action, -1, 1), [q_low, q_high])
+
+        Args:
+            action: jax.Array, 
+        Returns:
+            q_des: jax.Array, desired joint positions, shape (4,)
+        """
+        # clip the action to be within [-1, 1]
+        a = jnp.clip(action, -1.0, 1.0)
+
+        # compute the desired joint position
+        q_des = self.q_joints_nom + self.config.pos_action_scale * a
+
+        # clip to the feasible joint limits
+        q_des = jnp.clip(q_des, self.q_joints_pos_lb, self.q_joints_pos_ub)
+
+        return q_des
+    
+    # compute torque from desired position (not used)
+    def _q_des_to_torque(self, data0, q_des):
+        """
+        Convert a joint position target to a torque using PD control.
+        """
+        # get current joint state
+        q_pos = data0.qpos[3:]
+        q_vel = data0.qvel[3:]
+
+        # PD control
+        tau = self.kp * (q_des - q_pos) + self.kd * (0.0 - q_vel)
+        
+        # Map torque -> actuator control via gear and clip to ctrlrange
+        # (gear == 75 in your XML; guard against zeros just in case)
+        u = tau / self.gear                            # normalize the torque
+        u = jnp.clip(u, self.ctrl_min, self.ctrl_max)  # clip to control range to [-1, 1]
+
+        return u, tau
 
     @property
     def observation_size(self):
