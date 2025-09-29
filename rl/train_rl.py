@@ -181,10 +181,10 @@ if __name__ == "__main__":
         action_distribution=distribution.NormalTanhDistribution
     )
     ppo_config = dict(
-        num_timesteps=100_000_000,      # total training timesteps
+        num_timesteps=250_000_000,      # total training timesteps
         num_evals=20,                  # number of evaluations
         reward_scaling=1.0,            # reward scale
-        episode_length=600,            # max episode length
+        episode_length=800,            # max episode length
         normalize_observations=True,   # normalize observations
         action_repeat=1,               # action repeat
         unroll_length=20,              # PPO unroll length
