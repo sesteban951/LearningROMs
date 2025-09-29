@@ -178,7 +178,7 @@ if __name__ == "__main__":
         unroll_length=20,              # PPO unroll length
         num_minibatches=32,            # PPO minibatches
         num_updates_per_batch=4,       # PPO updates per batch
-        discounting=0.97,              # gamma
+        discounting=0.98,              # gamma
         learning_rate=3e-4,            # optimizer LR
         entropy_cost=0.005,             # entropy bonus
         clipping_epsilon=0.2,          # PPO clipping epsilon

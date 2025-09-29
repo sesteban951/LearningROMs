@@ -21,29 +21,41 @@ class BipedConfig:
     # number of "simulation steps" for every control input
     physics_steps_per_control_step: int = 4
 
-    # Reward function coefficients
-    reward_base_pos_z: float = 1.0    # target base height
+    # base rewards
+    reward_base_pos_z: float = 1.0     # target base height
     reward_base_vel_x: float = 1.0     # forward velocity target
     reward_base_vel_z: float = 0.01    # target base height
-    reward_base_ang_pos: float = 2.0   # torso orientation target
+    reward_base_ang_pos: float = 1.5   # torso orientation target
     reward_base_ang_vel: float = 0.15  # torso angular velocity target
-    reward_joint_pos: float = 0.1      # joint position 
-    reward_joint_vel: float = 1e-3     # joint velocity 
-    reward_joint_acc: float = 2.5e-7   # joint acceleration
+
+    # joint rewards
+    reward_joint_pos: float = 0.15      # joint position 
+    reward_joint_vel: float = 1e-3      # joint velocity 
+    reward_joint_acc: float = 2.5e-7    # joint acceleration
     reward_action_rate: float = 0.005   # control cost
-    reward_foot_contact: float = 0.1       # foot contact reward
-    reward_foot_slip: float = 0.1          # foot slip penalty
-    reward_alive: float = 1.0         # alive reward bonus (if not terminated)
-    cost_termination: float = 100.0      # cost at termination (if falls)
+    
+    # feet rewards
+    reward_foot_contact: float = 0.1     # foot contact reward
+    reward_foot_slip: float = 0.1        # foot slip penalty
+    reward_foot_clearance: float = 0.1  # foot clearance reward
+    reward_foot_air_time: float = 0.1   # foot air time reward
+
+    # alive and dead
+    reward_alive: float = 1.0        # alive reward bonus (if not terminated)
+    cost_termination: float = 100.0  # cost at termination (if falls)
+
+    # command values
+    base_vel_x_lb = -0.75   # lower bound for forward velocity command
+    base_vel_x_ub =  0.75   # upper bound for forward velocity command
 
     # desired values
-    base_pos_z_des: float = 0.82  # desired center of mass height
-    base_vel_x_des: float = 0.5   # desired forward velocity
-    theta_des: float = -0.1   # desired torso lean angle
-    hip_des: float = 0.22     # desired hip joint angle
+    base_pos_z_des: float = 0.82   # desired center of mass height
+    base_vel_x_des: float = 0.5    # desired forward velocity
+    theta_des: float = -0.1        # desired torso lean angle
+    foot_z_apex_des: float = 0.09  # desired foot height at apex of swing
 
     # phase parameters (inspired by unitree_rl_gym)
-    T_phase = 0.8           # total period of the gait cycle
+    T_phase = 1.0           # total period of the gait cycle
     phase_offset = 0.5      # percent offset between left and right legs
     phase_threshold = 0.55  # percent threshold that defines stance. leg_phase < 0.55 means
 
@@ -75,9 +87,9 @@ class BipedConfig:
     pos_action_scale: float = 0.25 
 
     # PD gains
-    kp_hip: float = 200.0
+    kp_hip: float = 250.0
     kd_hip: float = 5.0
-    kp_knee: float = 200.0
+    kp_knee: float = 250.0
     kd_knee: float = 5.0
 
 
@@ -106,7 +118,10 @@ class BipedEnv(PipelineEnv):
         # see https://colab.research.google.com/github/google-deepmind/mujoco/blob/main/mjx/tutorial.ipynb
         mj_model = mujoco.MjModel.from_xml_path(self.config.model_path)
         sys = mjcf.load_model(mj_model)
-        self.sys = sys
+
+        # control timestep
+        self.sim_dt = float(mj_model.opt.timestep)  # mujoco xml timestep
+        self.ctrl_dt = self.sim_dt * float(self.config.physics_steps_per_control_step)
 
         # get default keyframe
         key_name = "standing"
@@ -151,15 +166,17 @@ class BipedEnv(PipelineEnv):
         # build gear ratio vector
         self.gear = jnp.array(mj_model.actuator_gear[:, 0])  # shape (4,)
 
-        # site ids
-        self.left_site_id  = mujoco.mj_name2id(mj_model, mujoco.mjtObj.mjOBJ_SITE, "left_foot_site")
-        self.right_site_id = mujoco.mj_name2id(mj_model, mujoco.mjtObj.mjOBJ_SITE, "right_foot_site")
-
         # foot touch sensors
         left_foot_sensor_id = mujoco.mj_name2id(mj_model, mujoco.mjtObj.mjOBJ_SENSOR, "left_foot_touch")
         right_foot_sensor_id = mujoco.mj_name2id(mj_model, mujoco.mjtObj.mjOBJ_SENSOR, "right_foot_touch")
         self.left_adr = mj_model.sensor_adr[left_foot_sensor_id]    # dim should be 1
         self.right_adr = mj_model.sensor_adr[right_foot_sensor_id]  # dim should be 1
+
+        # foot position sensors
+        lpos_id = mujoco.mj_name2id(mj_model, mujoco.mjtObj.mjOBJ_SENSOR, "left_foot_pos")
+        rpos_id = mujoco.mj_name2id(mj_model, mujoco.mjtObj.mjOBJ_SENSOR, "right_foot_pos")
+        self.lpos_adr = mj_model.sensor_adr[lpos_id]    # dim should be 3
+        self.rpos_adr = mj_model.sensor_adr[rpos_id]    # dim should be 3
 
         # foot linear velocity sensors
         lvel_id = mujoco.mj_name2id(mj_model, mujoco.mjtObj.mjOBJ_SENSOR, "left_foot_linvel")
@@ -197,10 +214,6 @@ class BipedEnv(PipelineEnv):
         # split the rng to sample unique initial conditions
         rng, rng1, rng2 = jax.random.split(rng, 3)
 
-        # uniform sample within the limits
-        # qpos = jax.random.uniform(rng1, (7,), minval=self.q_pos_lb, maxval=self.q_pos_ub)
-        # qvel = jax.random.uniform(rng2, (7,), minval=self.q_vel_lb, maxval=self.q_vel_ub)
-
         # sample around the standing pose
         qpos = self.qpos_stand + 0.25*jax.random.normal(rng1, self.qpos_stand.shape)
         qvel = 0.05*jax.random.normal(rng2, self.qpos_stand.shape)
@@ -212,8 +225,11 @@ class BipedEnv(PipelineEnv):
         # reset the physics state
         data = self.pipeline_init(qpos, qvel)
 
-        # MODIFIED: initialize with zero previous action
+        # initialize with zero previous action
         prev_action = jnp.zeros(self.action_size)
+
+        # sample a random velocity command
+        v_cmd = self._sample_command(rng)
 
         # reset the observation (now includes previous action)
         obs = self._compute_obs(data, prev_action)
@@ -233,22 +249,41 @@ class BipedEnv(PipelineEnv):
                    "reward_action_rate": 0.0,
                    "reward_foot_contact": 0.0,
                    "reward_foot_slip": 0.0,
+                   "reward_foot_clearance": 0.0,   
+                   "reward_foot_air_time": 0.0,    
                    "reward_alive": 0.0,
-                   "cost_termination": 0.0
+                   "cost_termination": 0.0,
+                #    "v_cmd": v_cmd
                    }
+        
+        # contact/height at reset to avoid spurious first-contact
+        l_c, r_c = self._compute_foot_contact(data)         # bools
+        l_z, r_z = self._compute_foot_height(data)          # heights
 
-        # state info - MODIFIED: store previous action
-        info = {"rng": rng,
-                "step": 0,
-                "prev_action": prev_action,
-                }
+        last_contact = jnp.array([l_c, r_c], dtype=jnp.bool_)
+        in_swing = ~last_contact
+
+        # start air-time at 0; seed swing peak with current height if already in swing
+        swing_peak_height = jnp.array([l_z, r_z]) * in_swing.astype(l_z.dtype)
+
+        # state info
+        info = {
+            "rng": rng,
+            "step": 0,
+            "prev_action": prev_action,
+            # "v_cmd": v_cmd,
+            "feet_air_time": jnp.zeros(2),
+            "last_contact": last_contact,
+            "swing_peak_height": swing_peak_height,
+            }
         
         return State(pipeline_state=data,
                      obs=obs,
                      reward=reward,
                      done=done,
                      metrics=metrics,
-                     info=info)
+                     info=info
+                     )
     
     ######################################### STEP ###############################################
 
@@ -309,7 +344,42 @@ class BipedEnv(PipelineEnv):
         right_match = jnp.logical_not(jnp.logical_xor(right_in_contact, right_should_be_in_stance))
 
         # foot slip penalty
-        foot_slip = self._compute_feet_slip(data)
+        foot_slip = self._compute_foot_slip(data)
+
+        # contact booleans
+        l_contact, r_contact = self._compute_foot_contact(data)
+        in_contact = jnp.array([l_contact, r_contact]).astype(jnp.bool_)
+        not_in_contact = ~in_contact
+
+        # current foot heights
+        left_z, right_z = self._compute_foot_height(data)
+        foot_z = jnp.array([left_z, right_z])
+        dt = jnp.asarray(self.ctrl_dt, dtype=foot_z.dtype)
+
+        # update air time accumulator while in swing
+        feet_air_time = state.info["feet_air_time"] + not_in_contact.astype(dt.dtype) * dt
+
+        # Track peak swing height while in swing
+        prev_peak = state.info["swing_peak_height"]
+        swing_peak = jnp.where(not_in_contact, jnp.maximum(prev_peak, foot_z), prev_peak)
+
+        # Detect first contact (rising edge)
+        last_contact = state.info["last_contact"]
+        first_contact = in_contact & (~last_contact)
+        first_contact_f = first_contact.astype(foot_z.dtype)
+
+        # --- Air-time reward (apply at first contact) ---
+        desired_swing_time = 0.5 * self.config.T_phase
+        air_time_err = (feet_air_time - desired_swing_time) ** 2
+        reward_foot_air_time = -self.config.reward_foot_air_time * jnp.sum(air_time_err * first_contact_f)
+
+        # --- Clearance reward (apply at first contact) ---
+        clearance_err = (swing_peak - self.config.foot_z_apex_des) ** 2
+        reward_foot_clearance = -self.config.reward_foot_clearance * jnp.sum(clearance_err * first_contact_f)
+
+        # Reset per-foot accumulators on first contact
+        feet_air_time = jnp.where(first_contact, jnp.zeros_like(feet_air_time), feet_air_time)
+        swing_peak    = jnp.where(first_contact, jnp.zeros_like(swing_peak), swing_peak)
 
         # compute errors
         base_pos_z_err = jnp.square(base_pos_z - self.config.base_pos_z_des).sum()
@@ -358,7 +428,7 @@ class BipedEnv(PipelineEnv):
                   reward_base_ang_pos + reward_base_ang_vel +
                   reward_joint_pos + reward_joint_vel + reward_joint_acc +
                   reward_action_rate  +  
-                  reward_foot_contact + reward_foot_slip +
+                  reward_foot_contact + reward_foot_slip + reward_foot_air_time + reward_foot_clearance +
                   reward_alive + cost_termination)
 
         # update the metrics and info dictionaries
@@ -373,12 +443,17 @@ class BipedEnv(PipelineEnv):
         state.metrics["reward_action_rate"]  = reward_action_rate
         state.metrics["reward_foot_contact"] = reward_foot_contact
         state.metrics["reward_foot_slip"]    = reward_foot_slip
+        state.metrics["reward_foot_air_time"]  = reward_foot_air_time
+        state.metrics["reward_foot_clearance"] = reward_foot_clearance
         state.metrics["reward_alive"]        = reward_alive
         state.metrics["cost_termination"]    = cost_termination
         
         # update the state info
         state.info["step"] += 1
         state.info["prev_action"] = action  # Store current action for next step
+        state.info["feet_air_time"]      = feet_air_time
+        state.info["swing_peak_height"]  = swing_peak
+        state.info["last_contact"]       = in_contact
 
         return state.replace(pipeline_state=data,
                              obs=obs,
@@ -431,6 +506,23 @@ class BipedEnv(PipelineEnv):
     
     ########################################## UTILS ################################################
 
+    # helper to sample a command
+    def _sample_command(self, rng):
+        """
+        Sample a random velocity command for the biped.
+        
+        Args:
+            rng: jax random number generator (jax.Array)
+        Returns:
+            v_cmd: jax.Array, The sampled velocity command, shape ()
+        """
+
+        # sample from uniform distribution
+        v_cmd = jax.random.uniform(rng, (), 
+                                   minval=self.config.base_vel_x_lb, 
+                                   maxval=self.config.base_vel_x_ub)
+        return v_cmd
+
     # helper to compute if the feet are in contact with the ground
     def _compute_foot_contact(self, data):
         """
@@ -457,7 +549,7 @@ class BipedEnv(PipelineEnv):
         return left_in_contact, right_in_contact
     
     # compute if there is foot slip 
-    def _compute_feet_slip(self, data):
+    def _compute_foot_slip(self, data):
         """
         Compute foot slipping while in contact
         
@@ -482,7 +574,27 @@ class BipedEnv(PipelineEnv):
         slip_cost = vL_x * left_c + vR_x * right_c
 
         return slip_cost
-               
+ 
+    # compute foot height
+    def _compute_foot_height(self, data):
+        """
+        Compute the height of the left and right feet.
+        
+        Args:
+            data: brax.physics.base.State object, The physics state of the environment before the step.
+        Returns:
+            left_foot_z: jax.Array, The height of the left foot, shape ()
+            right_foot_z: jax.Array, The height of the right foot, shape ()
+        """
+        sd = data.sensordata
+        left_foot_pos =  sd[self.lpos_adr : self.lpos_adr + 3]  # (3,)
+        right_foot_pos = sd[self.rpos_adr : self.rpos_adr + 3]  # (3,)
+
+        # only the z-component
+        left_foot_z = left_foot_pos[2]
+        right_foot_z = right_foot_pos[2]
+
+        return left_foot_z, right_foot_z
 
     # helper function to compute the phase
     def _compute_phase(self, t):
