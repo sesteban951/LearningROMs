@@ -52,7 +52,7 @@ class BipedConfig:
     base_pos_z_des: float = 0.82   # desired center of mass height
     base_vel_x_des: float = 0.5    # desired forward velocity
     theta_des: float = -0.1        # desired torso lean angle
-    foot_z_apex_des: float = 0.09  # desired foot height at apex of swing
+    foot_z_apex_des: float = 0.10  # desired foot height at apex of swing
 
     # phase parameters (inspired by unitree_rl_gym)
     T_phase = 1.0           # total period of the gait cycle

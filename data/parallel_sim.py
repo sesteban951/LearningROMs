@@ -37,12 +37,6 @@ from rl.algorithms.ppo_play import PPO_Play
 
 
 ##################################################################################
-#AUXILLIARY FUNCTIONS
-##################################################################################
-
-
-
-##################################################################################
 # PARALLEL DYNAMICS ROLLOUT CLASS
 ##################################################################################
 
@@ -543,6 +537,11 @@ class ParallelSim():
 
 
 if __name__ == "__main__":
+
+    # print the device being used (gpu or cpu)
+    device = jax.devices()[0]
+    print("Device type:", device.platform)      # e.g. 'gpu' or 'cpu'
+    print("Device name:", device.device_kind)   # e.g. 'NVIDIA GeForce RTX 4090'
 
     # create a random number generator
     seed = int(time.time())
