@@ -88,6 +88,10 @@
         <!-- foot linear velocity in global coord-->
         <framelinvel name="left_foot_linvel"  objtype="site" objname="left_foot_site"/>
         <framelinvel name="right_foot_linvel" objtype="site" objname="right_foot_site"/>
+
+        <!-- foot world position -->
+        <framepos name="left_foot_pos"  objtype="site" objname="left_foot_site"/>
+        <framepos name="right_foot_pos" objtype="site" objname="right_foot_site"/>
     </sensor>
 
     <!-- Actuators -->
