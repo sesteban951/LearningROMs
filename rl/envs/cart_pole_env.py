@@ -22,7 +22,7 @@ class CartPoleConfig:
     physics_steps_per_control_step: int = 1
 
     # Reward function coefficients
-    reward_cart_pos: float = 0.75
+    reward_cart_pos: float = 0.8
     reward_pole_pos: float = 1.0
     reward_cart_vel: float = 0.005
     reward_pole_vel: float = 0.005

@@ -24,8 +24,8 @@ class PaddleBallConfig:
     # Reward function coefficients
     reward_ball_pos: float = 2.0
     reward_ball_vel: float = 0.01
-    reward_paddle_pos: float = 2.0
-    reward_paddle_vel: float = 0.01
+    reward_paddle_pos: float = 1.0
+    reward_paddle_vel: float = 0.015
     reward_control: float = 1e-4
 
     # Ranges for sampling initial conditions
@@ -167,7 +167,8 @@ class PaddleBallEnv(PipelineEnv):
         control_err = jnp.square(tau).sum()
 
         # compute the rewards
-        reward_ball_pos = -self.config.reward_ball_pos * ball_pos_err
+        # reward_ball_pos = -self.config.reward_ball_pos * ball_pos_err
+        reward_ball_pos = jnp.exp(-ball_pos_err) * self.config.reward_ball_pos
         reward_paddle_pos = -self.config.reward_paddle_pos * paddle_pos_err
         reward_ball_vel = -self.config.reward_ball_vel * ball_vel_err
         reward_paddle_vel = -self.config.reward_paddle_vel * paddle_vel_err
