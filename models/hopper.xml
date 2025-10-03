@@ -45,7 +45,7 @@
 
     <!-- Sensors -->    
     <sensor>
-        <touch name="torso_touch" site="torso_site"/>
+        <!-- <touch name="torso_touch" site="torso_site"/> -->
         <touch name="foot_touch"  site="foot_site"/>
     </sensor>
 

@@ -169,103 +169,97 @@ if __name__ == "__main__":
             if t_sim > wall_elapsed:
                 time.sleep(t_sim - wall_elapsed)
 
-    # pull another n_plot random trajectories and plot them
-    n_plot = min(n_plot, batch_size)
 
-    # time vector (N steps at dt)
-    t_state = np.arange(N_state) * sim_dt
-    t_input = np.arange(N_input) * sim_dt
+    # alpha value for plotting trajectories (0 = transparent, 1 = solid)
+    alpha_traj = 0.5 
+
+    rng = np.random.default_rng(0)
+    idxs = rng.choice(batch_size, size=min(n_plot, batch_size), replace=False)
+
+    # time bases
+    T_state = N_state
+    T_input = N_input if N_input > 0 else N_state
+    ctrl_dt = float(sim_dt) * (T_state / T_input)
+    t_state   = np.arange(T_state) * float(sim_dt)
+    t_input   = np.arange(T_input) * ctrl_dt
     t_contact = t_state
 
+    # optional contact shift (if logged post-step)
+    c_traj_plot = c_traj
 
-    # number of rows = max(nq, nc) so we can fit all signals
-    nrows = max(nq, nc)
+    nrows = max(q_traj.shape[2], v_traj.shape[2], u_traj.shape[2], c_traj.shape[2])
 
-    # figure and axes: nrows x 4 (q, v, u, c)
-    fig, axes = plt.subplots(nrows=nrows, ncols=4, figsize=(18, 2.2 * nrows), sharex=True)
-    if nrows == 1:
-        axes = axes[None, :]  # ensure 2D indexing
+    fig, axes = plt.subplots(nrows=nrows, ncols=4, figsize=(18, 2.6 * nrows), sharex=True)
+    if axes.ndim == 1:
+        axes = axes[None, :]
+
+    axes[0, 0].set_title("Positions (q)")
+    axes[0, 1].set_title("Velocities (v)")
+    axes[0, 2].set_title("Controls (u)")
+    axes[0, 3].set_title(touch_sensor_names[0] if len(touch_sensor_names) else "Contacts (c)")
+
+    show_legends = (len(idxs) <= 6)
 
     for i in range(nrows):
-            ax_q, ax_v, ax_u, ax_c = axes[i, 0], axes[i, 1], axes[i, 2], axes[i, 3]
+        ax_q, ax_v, ax_u, ax_c = axes[i, 0], axes[i, 1], axes[i, 2], axes[i, 3]
 
-            # --- Column 0: q[i] ---
-            if i < nq:
-                for _ in range(n_plot):
-                    idx = np.random.randint(batch_size)
-                    ax_q.plot(t_state, q_traj[idx, :, i], alpha=0.5)
-                ax_q.set_ylabel(f"q[{i}]")
-                ax_q.set_xlabel("Time [s]")        
-                ax_q.tick_params(labelbottom=True) 
-                if i == 0:
-                    ax_q.set_title("Positions (q)")
-            else:
-                ax_q.axis("off")
-            ax_q.grid(True, alpha=0.3)
+        # q[i]
+        if i < q_traj.shape[2]:
+            for idx in idxs:
+                ax_q.plot(t_state, q_traj[idx, :, i], alpha=alpha_traj, label=f"traj {idx}")
+            ax_q.set_ylabel(f"q[{i}]"); ax_q.grid(True, alpha=0.3)
+            if show_legends and i == 0: ax_q.legend(frameon=False, loc="best")
+        else:
+            ax_q.axis("off")
 
-            # --- Column 1: v[i] ---
-            if i < nv:
-                for _ in range(n_plot):
-                    idx = np.random.randint(batch_size)
-                    ax_v.plot(t_state, v_traj[idx, :, i], alpha=0.5)
-                ax_v.set_ylabel(f"v[{i}]")
-                ax_v.set_xlabel("Time [s]")        
-                ax_v.tick_params(labelbottom=True) 
-                if i == 0:
-                    ax_v.set_title("Velocities (v)")
-            else:
-                ax_v.axis("off")
-            ax_v.grid(True, alpha=0.3)
+        # v[i]
+        if i < v_traj.shape[2]:
+            for idx in idxs:
+                ax_v.plot(t_state, v_traj[idx, :, i], alpha=alpha_traj)
+            ax_v.set_ylabel(f"v[{i}]"); ax_v.grid(True, alpha=0.3)
+        else:
+            ax_v.axis("off")
 
-            # --- Column 2: u[i] ---
-            if i < nu:
-                for _ in range(n_plot):
-                    idx = np.random.randint(batch_size)
-                    ax_u.plot(t_input, u_traj[idx, :, i], alpha=0.5)
-                ax_u.set_ylabel(f"u[{i}]")
-                ax_u.set_xlabel("Time [s]")
-                ax_u.tick_params(labelbottom=True)  
-                if i == 0:
-                    ax_u.set_title("Controls (u)")
-            else:
-                ax_u.axis("off")
-            ax_u.grid(True, alpha=0.3)
+        # u[i]
+        if i < u_traj.shape[2]:
+            for idx in idxs:
+                ax_u.plot(t_input, u_traj[idx, :, i], alpha=alpha_traj)
+            ax_u.set_ylabel(f"u[{i}]"); ax_u.grid(True, alpha=0.3)
+        else:
+            ax_u.axis("off")
 
-            # --- Column 3: c[i] ---
-            if i < nc:
-                for _ in range(n_plot):
-                    idx = np.random.randint(batch_size)
-                    ax_c.plot(t_contact, c_traj[idx, :, i], alpha=0.5)
-                if i < len(touch_sensor_names):
-                    ax_c.set_title(touch_sensor_names[i])
-                else:
-                    ax_c.set_title(f"c[{i}]")
-                ax_c.set_ylabel(f"c[{i}]")
-                ax_c.set_xlabel("Time [s]")
-                ax_c.tick_params(labelbottom=True)   
-            else:
-                ax_c.axis("off")
-            ax_c.grid(True, alpha=0.3)
+        # c[i]
+        if i < c_traj_plot.shape[2]:
+            for idx in idxs:
+                ax_c.plot(t_contact, c_traj_plot[idx, :, i], alpha=alpha_traj)
+            ax_c.set_ylabel(f"c[{i}]"); ax_c.grid(True, alpha=0.3)
+        else:
+            ax_c.axis("off")
+
+    for ax in axes.ravel():
+        ax.set_xlabel("Time [s]")
+        ax.tick_params(labelbottom=True)
 
     plt.tight_layout()
     plt.show()
 
+    # ---------------------------
+    # Phase plots (same alpha)
+    # ---------------------------
+    fig, axes = plt.subplots(nrows=q_traj.shape[2], ncols=1, figsize=(7, 2.6 * q_traj.shape[2]), sharex=False)
+    if q_traj.shape[2] == 1:
+        axes = np.array([axes])
 
-    # plot the phase for each variable
-    fig, axes = plt.subplots(nrows=nq, ncols=1, figsize=(7, 2.2 * nq), sharex=True)
-    if nq == 1:
-        axes = axes[None, :]  # ensure 2D indexing when nq == 1 
-    for i in range(nq):
+    for i in range(q_traj.shape[2]):
         ax = axes[i]
-        if i < nv:
-            for _ in range(n_plot):
-                idx = np.random.randint(batch_size)
-                ax.plot(q_traj[idx, :, i], v_traj[idx, :, i], alpha=0.5)
-            ax.set_xlabel(f"q[{i}]")
-            ax.set_ylabel(f"v[{i}]")
-            ax.grid(True, alpha=0.3)
-            ax.set_title(f"Phase Plot: q[{i}] vs v[{i}]")
+        if i < v_traj.shape[2]:
+            for idx in idxs:
+                ax.plot(q_traj[idx, :, i], v_traj[idx, :, i], alpha=alpha_traj, label=f"traj {idx}")
+            ax.set_xlabel(f"q[{i}]"); ax.set_ylabel(f"v[{i}]")
+            ax.set_title(f"Phase Plot: q[{i}] vs v[{i}]"); ax.grid(True, alpha=0.3)
+            if show_legends and i == 0: ax.legend(frameon=False, loc="best")
         else:
             ax.axis("off")
+
     plt.tight_layout()
     plt.show()

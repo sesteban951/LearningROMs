@@ -53,10 +53,10 @@
         <touch name="ball_paddle_touch" site="ball_site"/>
 
         <!-- Ball vs Ground -->
-        <touch name="ball_ground_touch" site="ball_site"/>
+        <!-- <touch name="ball_ground_touch" site="ball_site"/> -->
 
         <!-- Paddle vs Ground -->
-        <touch name="paddle_ground_touch" site="paddle_site"/>
+        <!-- <touch name="paddle_ground_touch" site="paddle_site"/> -->
     </sensor>
 
     <!-- Actuators -->

@@ -575,7 +575,7 @@ if __name__ == "__main__":
     sim_dt_des = 0.001  # set to None if you want to use the default model XML timestep
 
     # trajectory length
-    T = 3000
+    T = 4000
 
     # choose environment, policy parameters, and state space bounds
     # env_name = "cart_pole"
@@ -691,10 +691,10 @@ if __name__ == "__main__":
     print(f"c_err_1: {c_err_1:.6e}, c_err_2: {c_err_2:.6e}, c_err_3: {c_err_3:.6e}")
 
     # save the data
-    q_log_np = np.array(q_log_1)
-    v_log_np = np.array(v_log_1)
-    u_log_np = np.array(u_log_1)
-    c_log_np = np.array(c_log_1)
+    q_log_np = np.array(q_log_3)
+    v_log_np = np.array(v_log_3)
+    u_log_np = np.array(u_log_3)
+    c_log_np = np.array(c_log_3)
 
     print(q_log_np.shape)
     print(v_log_np.shape)
