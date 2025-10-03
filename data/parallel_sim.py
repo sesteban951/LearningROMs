@@ -295,16 +295,16 @@ class ParallelSim():
             q_log: jnp.array, logged positions (batch_size, T, nq)
             v_log: jnp.array, logged velocities (batch_size, T, nv)
             u_log: jnp.array, logged inputs (batch_size, T-1, nu) (all zeros)
+            c_log: jnp.array, logged contacts (batch_size, T-1, nc) 
         """
     
         # sample initial conditions
         q0_batch, v0_batch = self.sample_random_uniform_initial_conditions()
 
         # perform rollout
-        q_log, v_log, u_log = self.rollout_zero_input_jit(q0_batch, v0_batch, T)
+        q_log, v_log, u_log, c_log = self.rollout_zero_input_jit(q0_batch, v0_batch, T)
 
-        # perform rollout
-        return q_log, v_log, u_log
+        return q_log, v_log, u_log, c_log
 
     # rollout with zero input sequence (pure function to jit)
     def _rollout_zero_input(self, q0_batch, v0_batch, T):
@@ -318,6 +318,7 @@ class ParallelSim():
             q_log: jnp.array, logged positions (batch_size, T, nq)
             v_log: jnp.array, logged velocities (batch_size, T, nv)
             u_log: jnp.array, logged inputs (batch_size, T-1, nu) (all zeros)
+            c_log: jnp.array, logged contacts (batch_size, T-1, nc)
         """
 
         # number of integration steps
@@ -335,23 +336,31 @@ class ParallelSim():
             # take a step
             data = self.step_fn_batched(data)
 
-            return data, (data.qpos, data.qvel)
+            # extract contact pairs
+            contact = self.parse_contact(data)
+
+            return data, (data.qpos, data.qvel, contact)
 
         # forward propagation
-        data_last, (q_log, v_log) = lax.scan(body, data_0, None, length=S)
+        data_last, (q_log, v_log, c_log) = lax.scan(body, data_0, None, length=S)
 
         # add the initial condition to the logs
         q0 = data_0.qpos   # initial q
         v0 = data_0.qvel   # initial v
+        c0 = self.parse_contact(data_0)  # initial contact
         q_log = jnp.concatenate((q0[None, :, :], q_log), axis=0)  # shape (T, batch_size, nq)
         v_log = jnp.concatenate((v0[None, :, :], v_log), axis=0)  # shape (T, batch_size, nv)
+        c_log = jnp.concatenate((c0[None, :, :], c_log), axis=0)   # (T, batch, nc)
 
         # swap axis to get (batch_size, T, dim)
         q_log  = jnp.swapaxes(q_log, 0, 1)  # shape (batch_size, T, nq)
         v_log  = jnp.swapaxes(v_log, 0, 1)  # shape (batch_size, T, nv)
+        c_log  = jnp.swapaxes(c_log, 0, 1)  # shape (batch_size, T, nc)
+
+        # u_log is all zeros
         u_log = jnp.broadcast_to(self.u_zero[:, None, :], (self.batch_size, S, self.nu)) # shape (batch_size, T-1, nu)
 
-        return q_log, v_log, u_log
+        return q_log, v_log, u_log, c_log
     
 
     ######################################### POLICY INPUT ROLLOUT #########################################
@@ -438,7 +447,7 @@ class ParallelSim():
         # add the initial condition to the logs
         q0 = data_0.qpos   # initial q
         v0 = data_0.qvel   # initial v 
-        c0 = self.parse_contact(data_0)  # (batch_size, nc)
+        c0 = self.parse_contact(data_0)  # initial contact
         q_log = jnp.concatenate((q0[None, :, :], q_log), axis=0)     # shape (T, batch_size, nq)
         v_log = jnp.concatenate((v0[None, :, :], v_log), axis=0)     # shape (T, batch_size, nv)
         c_log = jnp.concatenate((c0[None, ...], c_log), axis=0)  # (T, batch_size, nc)
@@ -464,6 +473,7 @@ class ParallelSim():
             q_log: jnp.array, logged positions (batch_size, T, nq)
             v_log: jnp.array, logged velocities (batch_size, T, nv)
             u_log: jnp.array, logged inputs (batch_size, T-1, nu)
+            c_log: jnp.array, logged contact forces (batch_size, T, nc)
         """
     
         # sample initial conditions
@@ -473,10 +483,10 @@ class ParallelSim():
         u_seq_batch = self.sample_random_uniform_inputs(T-1)
 
         # perform rollout
-        q_log, v_log, u_log = self.rollout_random_input_jit(q0_batch, v0_batch, u_seq_batch, T)
+        q_log, v_log, u_log, c_log = self.rollout_random_input_jit(q0_batch, v0_batch, u_seq_batch, T)
 
         # perform rollout
-        return q_log, v_log, u_log
+        return q_log, v_log, u_log, c_log
 
     # rollout with random input sequence (pure function to jit)
     def _rollout_random_input(self, q0_batch, v0_batch, u_seq_batch, T):
@@ -490,7 +500,8 @@ class ParallelSim():
         Returns:
             q_log: jnp.array, logged positions (batch_size, T, nq)
             v_log: jnp.array, logged velocities (batch_size, T, nv)
-            u_log: jnp.array, logged inputs (batch_size, T-1, nu) 
+            u_log: jnp.array, logged inputs (batch_size, T-1, nu)
+            c_log: jnp.array, logged contact forces (batch_size, T, nc)
         """
 
         # number of integration steps
@@ -509,23 +520,31 @@ class ParallelSim():
             data = data.replace(ctrl=u_t)
             data = self.step_fn_batched(data)
 
-            return data, (data.qpos, data.qvel, u_t)
+            # extract contact pairs
+            contact = self.parse_contact(data)
+
+            return data, (data.qpos, data.qvel, u_t, contact)
 
         # forward propagation
-        data_last, (q_log, v_log, u_log) = lax.scan(body, data_0, u_seq_batch_swapped, length=S)
+        data_last, (q_log, v_log, u_log, c_log) = lax.scan(body, data_0, u_seq_batch_swapped, length=S)
 
         # add the initial condition to the logs
         q0 = data_0.qpos   # initial q
         v0 = data_0.qvel   # initial v
+        c0 = self.parse_contact(data_0)  # initial contact
         q_log = jnp.concatenate((q0[None, :, :], q_log), axis=0)  # shape (T, batch_size, nq)
         v_log = jnp.concatenate((v0[None, :, :], v_log), axis=0)  # shape (T, batch_size, nv)
+        c_log = jnp.concatenate((c0[None, :, :], c_log), axis=0)  # shape (T, batch_size, nc)
 
         # swap axis to get (batch_size, T, dim)
         q_log  = jnp.swapaxes(q_log, 0, 1)  # shape (batch_size, T, nq)
         v_log  = jnp.swapaxes(v_log, 0, 1)  # shape (batch_size, T, nv)
+        c_log  = jnp.swapaxes(c_log, 0, 1)  # shape (batch_size, T, nc)
+
+        # the input log is just the input sequence
         u_log  = u_seq_batch                # shape (batch_size, T-1, nu)
 
-        return q_log, v_log, u_log
+        return q_log, v_log, u_log, c_log
     
     
     ######################################### UTILS #########################################
