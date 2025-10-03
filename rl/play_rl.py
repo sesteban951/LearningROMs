@@ -112,17 +112,20 @@ if __name__ == "__main__":
     # policy_data_path = "./rl/policy/acrobot_policy.pkl"
 
     # Load the environment and policy parameters
-    # env = envs.get_environment("paddle_ball")
-    # policy_data_path = "./rl/policy/paddle_ball_policy.pkl"
+    env = envs.get_environment("paddle_ball")
+    policy_data_path = "./rl/policy/paddle_ball_policy.pkl"
 
     # Load the environment and policy parameters
-    env = envs.get_environment("hopper")
-    policy_data_path = "./rl/policy/hopper_policy.pkl"
+    # env = envs.get_environment("hopper")
+    # policy_data_path = "./rl/policy/hopper_policy.pkl"
 
     # Load the environment and policy parameters
     # # env = envs.get_environment("biped_basic")
     # env = envs.get_environment("biped")
     # policy_data_path = "./rl/policy/biped_policy.pkl"
+
+    # desired sim dt
+    sim_dt = 0.001
 
     #----------------------------- POLICY SETUP -----------------------------#
 
@@ -138,6 +141,11 @@ if __name__ == "__main__":
     model_path = env.config.model_path
     mj_model = mujoco.MjModel.from_xml_path(model_path)
     mj_data = mujoco.MjData(mj_model)
+
+    # change the simulation dt
+    mj_model.opt.timestep = sim_dt
+    
+    # create the mjx model and data
     mjx_model = mjx.put_model(mj_model)
     mjx_data = mjx.put_data(mj_model, mj_data)
 

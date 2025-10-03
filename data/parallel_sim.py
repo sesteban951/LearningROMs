@@ -61,7 +61,7 @@ class ParallelSim():
     """
 
     # initialize the class
-    def __init__(self, config: ParallelSimConfig):
+    def __init__(self, config: ParallelSimConfig, sim_dt_des = None):
 
         # assign the random seed
         self.rng = config.rng
@@ -75,6 +75,12 @@ class ParallelSim():
         
         # load the dontrol decimation (number of sim steps per control step)
         self.control_decimation = env_config.physics_steps_per_control_step
+
+        # load the desired sim dt
+        if sim_dt_des is not None:
+            self.sim_dt = float(sim_dt_des)
+        else:
+            self.sim_dt = None
 
         # load the mujoco model for parallel sim
         model_path = env_config.model_path
@@ -123,6 +129,18 @@ class ParallelSim():
             mj_model: mujoco.MjModel, the mujoco model
             mj_data: mujoco.MjData, the mujoco data
         """
+        # original simulation timestep
+        original_sim_dt = float(mj_model.opt.timestep)
+
+        # overwrite the simulation time step of the mujoco XML if one is specified
+        if self.sim_dt is not None:
+            mj_model.opt.timestep = self.sim_dt
+
+        # check that control dt is integer multiple of sim dt
+        sim_dt = float(mj_model.opt.timestep)
+        ctrl_dt = float(original_sim_dt * self.control_decimation)
+        if (ctrl_dt / sim_dt) % 1.0 != 0.0:
+            raise ValueError(f"Sim dt ({sim_dt}) is not integer multiple of Control dt ({ctrl_dt}) .")
 
         # put the model and data on GPU
         self.mjx_model = mjx.put_model(mj_model)
@@ -549,10 +567,15 @@ if __name__ == "__main__":
     rng = jax.random.PRNGKey(seed)
 
     # choose batch size
-    batch_size = 2048
+    batch_size = 1024
+
+    # overwrite the simulation dt to a desired one
+    # NOTE: This overwrites the model XML timestep so 
+    #       that we get smoother trajectories across the board.
+    sim_dt_des = 0.001  # set to None if you want to use the default model XML timestep
 
     # trajectory length
-    T = 1000
+    T = 3000
 
     # choose environment, policy parameters, and state space bounds
     # env_name = "cart_pole"
@@ -587,7 +610,7 @@ if __name__ == "__main__":
                                policy_params_path=params_path)
     
     # create the rollout instance
-    r = ParallelSim(config)
+    r = ParallelSim(config, sim_dt_des)
 
     # choose the type of rollout
     # rollout_fn = r.rollout_zero_input
@@ -602,7 +625,7 @@ if __name__ == "__main__":
     u_log_1.block_until_ready()
     c_log_1.block_until_ready()
     time_1 = time.time()
-    print(f"Rollout with chosen inputs took (first): {(time_1-time_0):.3f}s")
+    print(f"Rollout with chosen inputs took (jitting): {(time_1-time_0):.3f}s")
 
     time_0 = time.time()
     q_log_2, v_log_2, u_log_2, c_log_2 = rollout_fn(T)
@@ -661,11 +684,11 @@ if __name__ == "__main__":
     c_err_2 = np.linalg.norm(c_log_2 - c_log_3)
     c_err_3 = np.linalg.norm(c_log_1 - c_log_3)
 
+    # want the error to be non zero -- means I have unique trajectories
     print(f"q_err_1: {q_err_1:.6e}, q_err_2: {q_err_2:.6e}, q_err_3: {q_err_3:.6e}")
     print(f"v_err_1: {v_err_1:.6e}, v_err_2: {v_err_2:.6e}, v_err_3: {v_err_3:.6e}")
     print(f"u_err_1: {u_err_1:.6e}, u_err_2: {u_err_2:.6e}, u_err_3: {u_err_3:.6e}")
     print(f"c_err_1: {c_err_1:.6e}, c_err_2: {c_err_2:.6e}, c_err_3: {c_err_3:.6e}")
-
 
     # save the data
     q_log_np = np.array(q_log_1)
@@ -681,5 +704,10 @@ if __name__ == "__main__":
     # save the data
     robot_name = r.env.robot_name
     save_path = f"./data/{robot_name}_data.npz"
-    np.savez(save_path, q_log=q_log_np, v_log=v_log_np, u_log=u_log_np, c_log=c_log_np)
+    np.savez(save_path, 
+             sim_dt=float(r.sim_dt), 
+             q_log=q_log_np, 
+             v_log=v_log_np, 
+             u_log=u_log_np, 
+             c_log=c_log_np)
     print(f"Saved data to: {save_path}")

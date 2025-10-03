@@ -3,7 +3,6 @@ import numpy as np
 import time
 import os, sys
 import matplotlib.pyplot as plt
-import matplotlib.animation as animation
 
 # mujoco imports
 import mujoco
@@ -86,6 +85,7 @@ if __name__ == "__main__":
     data = np.load(file_name)
 
     # access the arrays
+    sim_dt = data['sim_dt']
     q_traj = data['q_log']
     v_traj = data['v_log']
     u_traj = data['u_log']
@@ -98,6 +98,7 @@ if __name__ == "__main__":
     _, _, nc = c_traj.shape
 
     # print log shapes
+    print(f"Simulation dt: {sim_dt}")
     print(f"Full q_traj shape: {q_traj.shape}")
     print(f"Full v_traj shape: {v_traj.shape}")
     print(f"Full u_traj shape: {u_traj.shape}")
@@ -118,10 +119,7 @@ if __name__ == "__main__":
 
     # select one random trajectory to playback
     traj_idx = np.random.randint(batch_size)
-
     print(f"Playing back trajectory {traj_idx} of {batch_size}")
-
-    sim_dt = env.sys.opt.timestep
 
     # wall clock timing variables
     t_sim = 0.0
