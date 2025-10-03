@@ -9,7 +9,6 @@ import os, sys
 import numpy as np
 import time
 from dataclasses import dataclass
-from functools import partial
 
 # jax imports
 import jax
@@ -33,6 +32,7 @@ from rl.envs.biped_env import BipedEnv
 from rl.envs.biped_basic_env import BipedBasicEnv
 from rl.envs.hopper_env import HopperEnv
 from rl.envs.paddle_ball_env import PaddleBallEnv
+from rl.algorithms.custom_networks import BraxPPONetworksWrapper, MLP
 from rl.algorithms.ppo_play import PPO_Play
 
 
@@ -544,8 +544,8 @@ if __name__ == "__main__":
     print("Device name:", device.device_kind)   # e.g. 'NVIDIA GeForce RTX 4090'
 
     # create a random number generator
-    seed = int(time.time())
     # seed = 0
+    seed = int(time.time())
     rng = jax.random.PRNGKey(seed)
 
     # choose batch size
@@ -562,13 +562,6 @@ if __name__ == "__main__":
     # v_lb = jnp.array([-5.0, -6.0])  
     # v_ub = jnp.array([ 5.0,  6.0])
 
-    # env_name = "acrobot"
-    # params_path = "./rl/policy/acrobot_policy.pkl"
-    # q_lb = jnp.array([-jnp.pi, -jnp.pi])  # acrobot
-    # q_ub = jnp.array([ jnp.pi,  jnp.pi])  
-    # v_lb = jnp.array([-3.0, -3.0])  
-    # v_ub = jnp.array([ 3.0,  3.0])
-
     env_name = "paddle_ball"
     params_path = "./rl/policy/paddle_ball_policy.pkl"
     q_lb = jnp.array([ 1.0,  0.1]) # paddle ball
@@ -577,7 +570,7 @@ if __name__ == "__main__":
     v_ub = jnp.array([ 5.0,  5.0])
 
     # env_name = "hopper"
-    # params_path = "./rl/policy/hopper_policy_2025_09_22_18_38_41.pkl"
+    # params_path = "./rl/policy/hopper_policy.pkl"
     # q_lb = jnp.array([-0.001, 1.0, -jnp.pi, -0.3])  # hopper
     # q_ub = jnp.array([ 0.001, 1.5,  jnp.pi,  0.3])  
     # v_lb = jnp.array([-2.0, -2.0, -3.0, -5.0])

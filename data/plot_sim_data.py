@@ -29,6 +29,7 @@ from rl.algorithms.ppo_play import PPO_Play
 # UTILS
 ################################################################################
 
+# loads every contact pair possible from the mujoco XML model
 def load_touch_sensors(mj_model):
     """
     Load all touch sensors from a MuJoCo model.
@@ -64,11 +65,13 @@ if __name__ == "__main__":
 
     # choose the environment
     # env = envs.get_environment("cart_pole")
-    # env = envs.get_environment("acrobot")
     env = envs.get_environment("paddle_ball")
     # env = envs.get_environment("hopper")
     config = env.config
     robot_name = env.robot_name
+
+    # number of random trajectories to plot (use n_plot = 1 to see one trajectory for debugging)
+    n_plot = 20
 
     # load the mujoco model
     model_path = config.model_path
@@ -147,8 +150,6 @@ if __name__ == "__main__":
             # get the current sim time and state
             t_sim = mj_data.time
 
-            # print(f"Sim Time: {t_sim:.3f} s")
-
             # fix the state
             step_idx = int(t_sim / sim_dt)
 
@@ -170,8 +171,7 @@ if __name__ == "__main__":
             if t_sim > wall_elapsed:
                 time.sleep(t_sim - wall_elapsed)
 
-    # pull another n_plot random trajectories and plot them 
-    n_plot = 20
+    # pull another n_plot random trajectories and plot them
     n_plot = min(n_plot, batch_size)
 
     # time vector (N steps at dt)
