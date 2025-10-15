@@ -9,6 +9,7 @@ import glfw
 
 # custom includes 
 from indeces import Hopper_IDX
+from utils import Joy
 
 ##################################################################################
 
@@ -18,9 +19,13 @@ class Controller:
 
         # load the model file
         model = mujoco.MjModel.from_xml_path(model_file)
+        sim_dt = model.opt.timestep
 
         # get gravity 
         self.gravity = abs(model.opt.gravity[2])
+
+        # create joystick object
+        self.joystick = Joy()
 
         # get some IDs
         upper_body_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "torso")
@@ -34,8 +39,8 @@ class Controller:
         self.lower_body_mass = model.body_mass[lower_body_id]
 
         # cache sensor IDs
-        self.sid_foot  = model.sensor("foot_touch").id
         self.sid_torso = model.sensor("torso_touch").id
+        self.sid_foot  = model.sensor("foot_touch").id
 
         # extract the joint stiffness and damping
         self.k_leg = model.jnt_stiffness[leg_joint_id]
@@ -63,6 +68,44 @@ class Controller:
         self.kp_raibert = 1.0
         self.kd_raibert = 0.15
 
+        # velocity command parameters
+        self.vx_cmd_scale = 1.0    # m/s per unit joystick command
+        self.vx_cmd = 0.5          # desired forward velocity (used with joystick if connected)
+        
+        # low pass filter
+        f_cutoff = 0.75
+        omega_c = 2.0 * np.pi * f_cutoff
+        self.vx_cmd_alpha = np.exp(-omega_c * sim_dt)
+        self.vx_cmd_prev = 0.0    
+        self.vx_cmd_curr = 0.0    
+
+    # update velocity command from joystick
+    def update_joystick_command(self):
+
+        # if joystick is connected
+        if self.joystick.isConnected:
+
+            # update the joystick inputs
+            self.joystick.update()
+
+            # get input
+            vx_cmd_raw = self.joystick.LS_Y
+            self.vx_cmd_curr = self.vx_cmd_scale * vx_cmd_raw
+
+            # low-pass filter
+            self.vx_cmd = (  (1.0 - self.vx_cmd_alpha) * self.vx_cmd_curr 
+                           + self.vx_cmd_alpha* self.vx_cmd_prev)
+            self.vx_cmd_prev = self.vx_cmd
+
+            # deadband
+            if abs(self.vx_cmd) < 0.05:
+                self.vx_cmd = 0.0
+
+        # no joystick
+        else:
+            # will just use the default that was set in the init
+            pass
+
     # simple controller
     def compute_input(self, t, data):
 
@@ -80,6 +123,9 @@ class Controller:
 
         # parse contact information
         foot_in_contact, torso_in_contact = self.parse_contact(data)
+
+        # update the velocity command from joystick
+        self.update_joystick_command()
         
         # Ground
         if foot_in_contact:
@@ -119,10 +165,9 @@ class Controller:
             # compute the force
             F_leg = (  self.kp_leg_air * (pos_leg_des_air - pos_leg) 
                      + self.kd_leg_air * (vel_leg_des_air - vel_leg))
-            
-            # compute raibert step 
-            vx_body_des = 0.2
-            theta_des = self.kd_raibert * (vx_body_des - vx_body)
+
+            # desired angle
+            theta_des = self.kd_raibert * (self.vx_cmd - vx_body)
 
             # clip the desired angle
             theta_des = np.clip(theta_des, -0.7, 0.7)
@@ -138,7 +183,9 @@ class Controller:
         F_leg = np.clip(F_leg, -1, 1)
         T_body = np.clip(T_body, -1, 1)
 
-        print(f"F_leg: {F_leg:.2f}, T_body: {T_body:.2f}, Contact: {foot_in_contact}")
+        # print some info
+        print("vx_cmd: {:2f}, vx: {:2f}, vx_err: {:2f}".format(self.vx_cmd, vx_body, self.vx_cmd - vx_body))
+        # print(f"F_leg: {F_leg:.2f}, T_body: {T_body:.2f}, Contact: {foot_in_contact}")
 
         # compute the torque
         tau = np.array([T_body, F_leg])
@@ -170,6 +217,9 @@ if __name__ == "__main__":
     # load the file
     model = mujoco.MjModel.from_xml_path(model_file)
     data = mujoco.MjData(model)
+
+    # change the sim timestep
+    model.opt.timestep = 0.002
 
     # setup the glfw window
     if not glfw.init():
