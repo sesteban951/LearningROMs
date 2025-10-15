@@ -19,14 +19,20 @@ import mujoco
 import mujoco.mjx as mjx
 import mujoco.viewer
 
+# for importing policy
+import sys, os
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
 # custom imports
 from envs.cart_pole_env import CartPoleEnv
+from envs.cart_pole_tracking_env import CartPoleTrackingEnv
 from envs.acrobot_env import AcrobotEnv
 from envs.biped_env import BipedEnv
 from envs.biped_basic_env import BipedBasicEnv
 from envs.hopper_env import HopperEnv
 from envs.paddle_ball_env import PaddleBallEnv
 from algorithms.ppo_play import PPO_Play
+from utils.utils import Joy
 
 
 #################################################################
@@ -103,29 +109,31 @@ if __name__ == "__main__":
 
     #----------------------------- POLICY IMPORT -----------------------------#
 
-    # Load the environment and policy parameters
+    # CART POLE
     # env = envs.get_environment("cart_pole")
     # policy_data_path = "./rl/policy/cart_pole_policy.pkl"
+    env = envs.get_environment("cart_pole_tracking")
+    policy_data_path = "./rl/policy/cart_pole_tracking_policy_2025_10_15_16_54_25.pkl"
 
-    # Load the environment and policy parameters
+    # ACROBOT
     # env = envs.get_environment("acrobot")
     # policy_data_path = "./rl/policy/acrobot_policy.pkl"
 
-    # Load the environment and policy parameters
-    env = envs.get_environment("paddle_ball")
-    policy_data_path = "./rl/policy/paddle_ball_policy.pkl"
+    # PADDLE BALL
+    # env = envs.get_environment("paddle_ball")
+    # policy_data_path = "./rl/policy/paddle_ball_policy.pkl"
 
-    # Load the environment and policy parameters
+    # HOPPER
     # env = envs.get_environment("hopper")
     # policy_data_path = "./rl/policy/hopper_policy.pkl"
 
-    # Load the environment and policy parameters
+    # BIPED
     # # env = envs.get_environment("biped_basic")
     # env = envs.get_environment("biped")
     # policy_data_path = "./rl/policy/biped_policy.pkl"
 
     # desired sim dt
-    sim_dt = 0.001
+    sim_dt = 0.002
 
     #----------------------------- POLICY SETUP -----------------------------#
 
@@ -165,6 +173,21 @@ if __name__ == "__main__":
     wall_start = time.time()
     last_render = 0.0
 
+    # check if the env is a tracking environment
+    env_name = env.env_name
+    is_tracking_env = "tracking" in env_name.lower()
+    if is_tracking_env == True:
+
+        # initialize a joystick if available
+        joy = Joy()
+
+        # get the command limits
+        cmd_lb = env.config.cmd_lb
+        cmd_ub = env.config.cmd_ub
+
+        # set the a nominal command (in case no joystick is connected)
+        cmd = 0.0
+        
     # initial action and control
     action_prev = np.zeros(env.action_size, dtype=np.float32)  # previous Δq
     ctrl = np.zeros(mj_model.nu, dtype=np.float32)             # actuator control
@@ -183,13 +206,27 @@ if __name__ == "__main__":
 
             # get the current sim time and state
             t_sim = mj_data.time
-            print(f"Sim Time: {t_sim:.3f} s")
 
             # print contact information
             contact = parse_contact(mj_data)
 
             # query controller at the desired rate
             if sim_step_counter % sim_steps_per_ctrl == 0:
+
+                # print sim time
+                print(f"Sim Time: {t_sim:.3f} s")
+
+                # update the desired command
+                if joy.isConnected:
+                    # update the joystick
+                    joy.update()
+                    
+                    # scale using upper and lower limits, such that cmd ∈ [cmd_lb, cmd_ub]
+                    cmd_raw = joy.LS_Y
+                    cmd = 0.5*(cmd_ub - cmd_lb) * cmd_raw + 0.5 * (cmd_ub + cmd_lb)
+
+                    # print the tracking
+                    print(f"cmd: {cmd:.3f}")
 
                 # sync mjx_data with current MuJoCo state (PRE-STEP state!)
                 qpos = jnp.array(mj_data.qpos)
@@ -198,9 +235,13 @@ if __name__ == "__main__":
 
                 # build observation
                 if env.robot_name == "biped":
-                    obs = obs_fn(mjx_data, action_prev) # pass previous Δq
+                    obs = obs_fn(mjx_data, action_prev)  # pass previous Δq
+                elif is_tracking_env:
+                    # manually construct tracking obs: [pos, cosθ, sinθ, vel, θdot, pos_cmd]
+                    obs = obs_fn(mjx_data, cmd)
                 else:
-                    obs = obs_fn(mjx_data)
+                    # non-tracking, use the env's usual obs function
+                    obs = env._compute_obs(mjx_data)
 
                 # policy action
                 action = policy_fn(obs)      # jax array

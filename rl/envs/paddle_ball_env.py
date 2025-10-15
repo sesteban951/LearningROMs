@@ -56,6 +56,9 @@ class PaddleBallEnv(PipelineEnv):
         # robot name
         self.robot_name = "paddle_ball"
 
+        # environment name
+        self.env_name = "paddle_ball"
+
         # load the config
         self.config = config
 

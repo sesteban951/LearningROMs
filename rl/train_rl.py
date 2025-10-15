@@ -15,6 +15,7 @@ import brax.training.distribution as distribution
 
 # custom imports
 from envs.cart_pole_env import CartPoleEnv, CartPoleConfig
+from envs.cart_pole_tracking_env import CartPoleTrackingEnv, CartPoleTrackingConfig
 from envs.acrobot_env import AcrobotEnv, AcrobotConfig
 from envs.biped_env import BipedEnv, BipedConfig
 from envs.biped_basic_env import BipedBasicEnv, BipedBasicConfig
@@ -34,36 +35,37 @@ if __name__ == "__main__":
 
     # Initialize the environment and PPO hyperparameters
     # env = envs.get_environment("cart_pole")
-    # policy_network_config = MLPConfig(
-    #     layer_sizes=(32, 32, 32, 32, 2*env.action_size),   # policy hidden layer sizes
-    #     activation_fn_name="relu",                        # activation function
-    # )
-    # value_network_config = MLPConfig(
-    #     layer_sizes=(256, 256, 256, 256, 256, 1),  # value hidden layer sizes
-    #     activation_fn_name="swish",                # activation function
-    # )
-    # network_wrapper = BraxPPONetworksWrapper(
-    #     policy_network=MLP(policy_network_config),
-    #     value_network=MLP(value_network_config),
-    #     action_distribution=distribution.NormalTanhDistribution
-    # )
-    # ppo_config = dict(
-    #     num_timesteps=80_000_000,      
-    #     num_evals=10,                  
-    #     reward_scaling=0.1,            
-    #     episode_length=200,            
-    #     normalize_observations=True,   
-    #     unroll_length=10,              
-    #     num_minibatches=32,            
-    #     num_updates_per_batch=8,       
-    #     discounting=0.97,              
-    #     learning_rate=1e-3,            
-    #     clipping_epsilon=0.2,          
-    #     entropy_cost=1e-3,             
-    #     num_envs=1024,                 
-    #     batch_size=1024,               
-    #     seed=0,                        
-    # )
+    env = envs.get_environment("cart_pole_tracking")
+    policy_network_config = MLPConfig(
+        layer_sizes=(32, 32, 32, 32, 2*env.action_size),   # policy hidden layer sizes
+        activation_fn_name="relu",                         # activation function
+    )
+    value_network_config = MLPConfig(
+        layer_sizes=(256, 256, 256, 256, 256, 1),  # value hidden layer sizes
+        activation_fn_name="swish",                # activation function
+    )
+    network_wrapper = BraxPPONetworksWrapper(
+        policy_network=MLP(policy_network_config),
+        value_network=MLP(value_network_config),
+        action_distribution=distribution.NormalTanhDistribution
+    )
+    ppo_config = dict(
+        num_timesteps=100_000_000,      
+        num_evals=10,                  
+        reward_scaling=0.1,            
+        episode_length=200,            
+        normalize_observations=True,   
+        unroll_length=10,              
+        num_minibatches=32,            
+        num_updates_per_batch=8,       
+        discounting=0.97,              
+        learning_rate=1e-3,            
+        clipping_epsilon=0.2,          
+        entropy_cost=1e-3,             
+        num_envs=1024,                 
+        batch_size=1024,               
+        seed=0,                        
+    )
 
     # Initialize the environment and PPO hyperparameters
     # env = envs.get_environment("acrobot")
@@ -132,37 +134,37 @@ if __name__ == "__main__":
     # )
 
     # Initialize the environment and PPO hyperparameters
-    env = envs.get_environment("hopper")
-    policy_network_config = MLPConfig(
-        layer_sizes=(32, 32, 32, 32, 2*env.action_size),   # policy hidden layer sizes
-        activation_fn_name="swish",                        # activation function
-    )
-    value_network_config = MLPConfig(
-        layer_sizes=(256, 256, 256, 256, 256, 1),  # value hidden layer sizes
-        activation_fn_name="swish",                # activation function
-    )
-    network_wrapper = BraxPPONetworksWrapper(
-        policy_network=MLP(policy_network_config),
-        value_network=MLP(value_network_config),
-        action_distribution=distribution.NormalTanhDistribution
-    )
-    ppo_config = dict(
-        num_timesteps=50_000_000,      
-        num_evals=10,                  
-        reward_scaling=0.1,            
-        episode_length=600,            
-        normalize_observations=True,   
-        unroll_length=5,              
-        num_minibatches=64,            
-        num_updates_per_batch=8,       
-        discounting=0.97,              
-        learning_rate=5e-4,            
-        clipping_epsilon=0.2,          
-        entropy_cost=3e-4,             
-        num_envs=4096,                 
-        batch_size=4096,               
-        seed=0,                        
-    )
+    # env = envs.get_environment("hopper")
+    # policy_network_config = MLPConfig(
+    #     layer_sizes=(32, 32, 32, 32, 2*env.action_size),   # policy hidden layer sizes
+    #     activation_fn_name="swish",                        # activation function
+    # )
+    # value_network_config = MLPConfig(
+    #     layer_sizes=(256, 256, 256, 256, 256, 1),  # value hidden layer sizes
+    #     activation_fn_name="swish",                # activation function
+    # )
+    # network_wrapper = BraxPPONetworksWrapper(
+    #     policy_network=MLP(policy_network_config),
+    #     value_network=MLP(value_network_config),
+    #     action_distribution=distribution.NormalTanhDistribution
+    # )
+    # ppo_config = dict(
+    #     num_timesteps=50_000_000,      
+    #     num_evals=10,                  
+    #     reward_scaling=0.1,            
+    #     episode_length=600,            
+    #     normalize_observations=True,   
+    #     unroll_length=5,              
+    #     num_minibatches=64,            
+    #     num_updates_per_batch=8,       
+    #     discounting=0.97,              
+    #     learning_rate=5e-4,            
+    #     clipping_epsilon=0.2,          
+    #     entropy_cost=3e-4,             
+    #     num_envs=4096,                 
+    #     batch_size=4096,               
+    #     seed=0,                        
+    # )
 
     # Initialize the environment and PPO hyperparameters
     # env = envs.get_environment("biped_basic")

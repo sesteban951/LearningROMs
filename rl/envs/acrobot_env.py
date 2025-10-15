@@ -50,6 +50,9 @@ class AcrobotEnv(PipelineEnv):
         # robot name
         self.robot_name = "acrobot"
 
+        # environment name
+        self.env_name = "acrobot"
+
         # load the config
         self.config = config
 

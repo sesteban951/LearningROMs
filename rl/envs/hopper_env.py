@@ -67,6 +67,9 @@ class HopperEnv(PipelineEnv):
         # robot name
         self.robot_name = "hopper"
 
+        # environment name
+        self.env_name = "hopper"
+
         # load the config
         self.config = config
 
