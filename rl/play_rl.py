@@ -113,7 +113,7 @@ if __name__ == "__main__":
     # env = envs.get_environment("cart_pole")
     # policy_data_path = "./rl/policy/cart_pole_policy.pkl"
     env = envs.get_environment("cart_pole_tracking")
-    policy_data_path = "./rl/policy/cart_pole_tracking_policy_2025_10_15_16_54_25.pkl"
+    policy_data_path = "./rl/policy/cart_pole_tracking_policy.pkl"
 
     # ACROBOT
     # env = envs.get_environment("acrobot")
