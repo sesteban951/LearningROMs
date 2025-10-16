@@ -30,6 +30,7 @@ from envs.acrobot_env import AcrobotEnv
 from envs.biped_env import BipedEnv
 from envs.biped_basic_env import BipedBasicEnv
 from envs.hopper_env import HopperEnv
+from envs.hopper_tracking_env import HopperTrackingEnv
 from envs.paddle_ball_env import PaddleBallEnv
 from envs.paddle_ball_tracking_env import PaddleBallTrackingEnv
 from algorithms.ppo_play import PPO_Play
@@ -123,12 +124,14 @@ if __name__ == "__main__":
     # PADDLE BALL
     # env = envs.get_environment("paddle_ball")
     # policy_data_path = "./rl/policy/paddle_ball_policy.pkl"
-    env = envs.get_environment("paddle_ball_tracking")
-    policy_data_path = "./rl/policy/paddle_ball_tracking_policy.pkl"
+    # env = envs.get_environment("paddle_ball_tracking")
+    # policy_data_path = "./rl/policy/paddle_ball_tracking_policy.pkl"
 
     # HOPPER
     # env = envs.get_environment("hopper")
     # policy_data_path = "./rl/policy/hopper_policy.pkl"
+    env = envs.get_environment("hopper_tracking")
+    policy_data_path = "./rl/policy/hopper_tracking_policy.pkl"
 
     # BIPED
     # # env = envs.get_environment("biped_basic")
