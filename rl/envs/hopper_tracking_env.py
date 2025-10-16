@@ -25,7 +25,7 @@ class HopperTrackingConfig:
     reward_torso_height: float = 4.0   # reward for torso height
     reward_torso_angle: float = 0.5    # reward for torso angle
     reward_leg_pos: float = 0.01        # reward for leg position
-    reward_torso_vel_x: float = 1.0      # reward for zero velocity
+    reward_torso_vel_x: float = 2.0      # reward for zero velocity
     reward_torso_vel_z: float = 0.01      # reward for zero velocity
     reward_torso_vel_angle: float = 0.01      # reward for zero velocity
     reward_leg_vel: float = 0.001        # reward for zero leg velocity
@@ -210,7 +210,7 @@ class HopperTrackingEnv(PipelineEnv):
         reward_torso_height = -self.config.reward_torso_height * torso_height_err
         reward_torso_angle = -self.config.reward_torso_angle * torso_angle_err
         reward_leg_pos = -self.config.reward_leg_pos * leg_pos_err
-        reward_torso_vel_x = -self.config.reward_torso_vel_x * torso_vel_x_err
+        reward_torso_vel_x = jnp.exp(- torso_vel_x_err / 0.25) * self.config.reward_torso_vel_x
         reward_torso_vel_z = -self.config.reward_torso_vel_z * torso_vel_z_err
         reward_torso_vel_angle = -self.config.reward_torso_vel_angle * torso_vel_angle_err
         reward_leg_vel = -self.config.reward_leg_vel * leg_vel_err
