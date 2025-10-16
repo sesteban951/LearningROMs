@@ -12,57 +12,58 @@ import mujoco
 
 # struct to hold the configuration parameters
 @struct.dataclass
-class CartPoleTrackingConfig:
-    """Config dataclass for cart-pole."""
+class PaddleBallTrackingConfig:
+    """Config dataclass for paddle ball."""
 
     # model path (NOTE: relative the script that calls this class)
-    model_path: str = "./models/cart_pole.xml"
+    model_path: str = "./models/paddle_ball.xml"
 
     # number of "simulation steps" for every control input
-    physics_steps_per_control_step: int = 1
+    physics_steps_per_control_step: int = 4
 
     # Reward function coefficients
-    reward_cart_pos: float = 1.0
-    reward_pole_pos: float = 1.0
-    reward_cart_vel: float = 0.005
-    reward_pole_vel: float = 0.005
-    reward_control: float = 0.005
+    reward_ball_pos: float = 2.0
+    reward_ball_vel: float = 0.01
+    reward_paddle_pos: float = 1.0
+    reward_paddle_vel: float = 0.015
+    reward_control: float = 1e-4
 
     # Ranges for sampling initial conditions
-    lb_pos: float = -1.5
-    ub_pos: float =  1.5
-    lb_theta: float = -jnp.pi
-    ub_theta: float =  jnp.pi
-    lb_vel: float = -10.0
-    ub_vel: float =  10.0
-    lb_theta_dot: float = -10.0
-    ub_theta_dot: float =  10.0
+    lb_ball_pos: float = 1.0
+    ub_ball_pos: float = 2.0
+    lb_ball_vel: float = -5.0
+    ub_ball_vel: float =  0.5
+
+    lb_paddle_pos: float = 0.01
+    ub_paddle_pos: float = 1.0
+    lb_paddle_vel: float = -5.0
+    ub_paddle_vel: float =  5.0
 
     # sample position commands
-    cmd_lb: float = -1.0      # lower bound of command sampling range
-    cmd_ub: float =  1.0      # upper bound of command sampling range
-    cmd_nom: float =  0.0      # nominal command (for bernoulli sampling)
+    cmd_lb: float = 1.0        # lower bound of command sampling range
+    cmd_ub: float = 2.0        # upper bound of command sampling range
+    cmd_nom: float = 1.5       # nominal command (for bernoulli sampling)
     bernoulli_p: float = 0.1   # probability of sampling the nominal command, p ∈ [0, 1]
 
 
 # environment class
-class CartPoleTrackingEnv(PipelineEnv):
+class PaddleBallTrackingEnv(PipelineEnv):
     """
-    Environment for training a cart-pole swingup task (with position tracking).
+    Environment for training a paddle ball bouncing task (with tracking a height).
 
-    States: x = (pos, theta, vel, dtheta), shape=(4,)
-    Observations: o = (pos, cos(theta), sin(theta), vel, dtheta, pos_cmd), shape=(6,)
-    Actions: a = tau, the force on the cart, shape=(1,)
+    States: x = (pos_ball, pos_paddle, vel_ball, vel_paddle), shape=(4,)
+    Observations: o = (pos_ball, pos_paddle, vel_ball, vel_paddle), shape=(4,)
+    Actions: a = tau, the force on the paddle, shape=(1,)
     """
 
     # initialize the environment
-    def __init__(self, config: CartPoleTrackingConfig = CartPoleTrackingConfig()):
+    def __init__(self, config: PaddleBallTrackingConfig = PaddleBallTrackingConfig()):
 
         # robot name
-        self.robot_name = "cart_pole"
+        self.robot_name = "paddle_ball"
 
         # environment name
-        self.env_name = "cart_pole_tracking"
+        self.env_name = "paddle_ball_tracking"
 
         # load the config
         self.config = config
@@ -83,7 +84,7 @@ class CartPoleTrackingEnv(PipelineEnv):
         # n_frames: number of sim steps per control step, dt = n_frames * xml_dt
 
         # print message
-        print(f"Initialized CartPoleTrackingEnv with model [{self.config.model_path}].")
+        print(f"Initialized PaddleBallTrackingEnv with model [{self.config.model_path}].")
 
     # reset function
     def reset(self, rng):
@@ -102,10 +103,10 @@ class CartPoleTrackingEnv(PipelineEnv):
         rng, rng1, rng2, rng3 = jax.random.split(rng, 4)
 
         # set the state bounds for sampling initial conditions
-        qpos_lb = jnp.array([self.config.lb_pos, self.config.lb_theta])
-        qpos_ub = jnp.array([self.config.ub_pos, self.config.ub_theta])
-        qvel_lb = jnp.array([self.config.lb_vel, self.config.lb_theta_dot])
-        qvel_ub = jnp.array([self.config.ub_vel, self.config.ub_theta_dot])
+        qpos_lb = jnp.array([self.config.lb_ball_pos, self.config.lb_paddle_pos])
+        qpos_ub = jnp.array([self.config.ub_ball_pos, self.config.ub_paddle_pos])
+        qvel_lb = jnp.array([self.config.lb_ball_vel, self.config.lb_paddle_vel])
+        qvel_ub = jnp.array([self.config.ub_ball_vel, self.config.ub_paddle_vel])
 
         # sample the initial state
         qpos = jax.random.uniform(rng1, (2,), minval=qpos_lb, maxval=qpos_ub)
@@ -129,10 +130,10 @@ class CartPoleTrackingEnv(PipelineEnv):
         reward, done = jnp.zeros(2)
 
         # reset the metrics
-        metrics = {"reward_cart_pos": jnp.array(0.0),
-                   "reward_pole_pos": jnp.array(0.0),
-                   "reward_cart_vel": jnp.array(0.0),
-                   "reward_pole_vel": jnp.array(0.0),
+        metrics = {"reward_ball_pos": jnp.array(0.0),
+                   "reward_paddle_pos": jnp.array(0.0),
+                   "reward_ball_vel": jnp.array(0.0),
+                   "reward_paddle_vel": jnp.array(0.0),
                    "reward_control": jnp.array(0.0)}
 
         # state info
@@ -169,41 +170,41 @@ class CartPoleTrackingEnv(PipelineEnv):
         obs = self._compute_obs(data, pos_cmd)
 
         # data
-        pos = data.qpos[0]
-        theta = data.qpos[1]
-        cos_theta = jnp.cos(theta)
-        sin_theta = jnp.sin(theta)
-        vel = data.qvel[0]
-        theta_dot = data.qvel[1]
+        ball_pos = data.qpos[0]
+        paddle_pos = data.qpos[1]
+        ball_vel = data.qvel[0]
+        paddle_vel = data.qvel[1]
         tau = data.ctrl
 
-        # special angle error
-        theta_angle_vec = jnp.array([cos_theta - 1.0, sin_theta]) # want (0, 0)
+        # desired position of the ball and paddle
+        des_ball_pos = pos_cmd
+        des_paddle_pos = 0.5
 
         # compute error terms
-        cart_pos_err = jnp.square(pos - pos_cmd).sum()
-        pole_pos_err = jnp.square(theta_angle_vec).sum()
-        cart_vel_err = jnp.square(vel).sum()
-        theta_dot_err = jnp.square(theta_dot).sum()
+        ball_pos_err = jnp.square(ball_pos - des_ball_pos).sum()
+        paddle_pos_err = jnp.square(paddle_pos - des_paddle_pos).sum()
+        ball_vel_err = jnp.square(ball_vel).sum()
+        paddle_vel_err = jnp.square(paddle_vel).sum()
         control_err = jnp.square(tau).sum()
 
         # compute the rewards
-        reward_cart_pos = -self.config.reward_cart_pos * cart_pos_err
-        reward_pole_pos = -self.config.reward_pole_pos * pole_pos_err
-        reward_cart_vel = -self.config.reward_cart_vel * cart_vel_err
-        reward_pole_vel = -self.config.reward_pole_vel * theta_dot_err
+        # reward_ball_pos = -self.config.reward_ball_pos * ball_pos_err
+        reward_ball_pos = jnp.exp(-ball_pos_err) * self.config.reward_ball_pos
+        reward_paddle_pos = -self.config.reward_paddle_pos * paddle_pos_err
+        reward_ball_vel = -self.config.reward_ball_vel * ball_vel_err
+        reward_paddle_vel = -self.config.reward_paddle_vel * paddle_vel_err
         reward_control  = -self.config.reward_control * control_err
 
         # compute the total reward
-        reward = (reward_cart_pos + reward_pole_pos + 
-                  reward_cart_vel + reward_pole_vel + 
+        reward = (reward_ball_pos + reward_paddle_pos + 
+                  reward_ball_vel + reward_paddle_vel + 
                   reward_control)
         
         # update the metrics and info dictionaries
-        state.metrics["reward_cart_pos"] = reward_cart_pos
-        state.metrics["reward_pole_pos"] = reward_pole_pos
-        state.metrics["reward_cart_vel"] = reward_cart_vel
-        state.metrics["reward_pole_vel"] = reward_pole_vel
+        state.metrics["reward_ball_pos"] = reward_ball_pos
+        state.metrics["reward_paddle_pos"] = reward_paddle_pos
+        state.metrics["reward_ball_vel"] = reward_ball_vel
+        state.metrics["reward_paddle_vel"] = reward_paddle_vel
         state.metrics["reward_control"] = reward_control
         state.info["step"] += 1
 
@@ -220,29 +221,28 @@ class CartPoleTrackingEnv(PipelineEnv):
             data: brax.physics.base.State object
                   The physics state of the environment.
             pos_cmd: float
-                     The desired cart position command.
+                     The desired ball position command.
         """
 
         # extract the relevant information from the data
-        pos = data.qpos[0]
-        vel = data.qvel[0]
-        theta = data.qpos[1]
-        theta_dot = data.qvel[1]
+        ball_pos = data.qpos[0]
+        paddle_pos = data.qpos[1]
+        ball_vel = data.qvel[0]
+        paddle_vel = data.qvel[1]
 
         # compute the observation
-        obs = jnp.array([pos,            # cart position
-                         jnp.cos(theta), # normalized angle
-                         jnp.sin(theta), # normalized angle
-                         vel,            # cart velocity
-                         theta_dot,      # pole angular velocity
-                         pos_cmd])       # position command
+        obs = jnp.array([ball_pos,            # ball position
+                         paddle_pos,          # paddle position
+                         ball_vel,            # ball velocity
+                         paddle_vel,          # paddle velocity
+                         pos_cmd])            # ball position command
 
         return obs
     
     @property
     def observation_size(self):
         """Returns the size of the observation space."""
-        return 6
+        return 5
 
     @property
     def action_size(self):
@@ -251,4 +251,4 @@ class CartPoleTrackingEnv(PipelineEnv):
 
 
 # register the environment
-envs.register_environment("cart_pole_tracking", CartPoleTrackingEnv)
+envs.register_environment("paddle_ball_tracking", PaddleBallTrackingEnv)

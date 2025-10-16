@@ -31,6 +31,7 @@ from envs.biped_env import BipedEnv
 from envs.biped_basic_env import BipedBasicEnv
 from envs.hopper_env import HopperEnv
 from envs.paddle_ball_env import PaddleBallEnv
+from envs.paddle_ball_tracking_env import PaddleBallTrackingEnv
 from algorithms.ppo_play import PPO_Play
 from utils.utils import Joy
 
@@ -112,8 +113,8 @@ if __name__ == "__main__":
     # CART POLE
     # env = envs.get_environment("cart_pole")
     # policy_data_path = "./rl/policy/cart_pole_policy.pkl"
-    env = envs.get_environment("cart_pole_tracking")
-    policy_data_path = "./rl/policy/cart_pole_tracking_policy.pkl"
+    # env = envs.get_environment("cart_pole_tracking")
+    # policy_data_path = "./rl/policy/cart_pole_tracking_policy.pkl"
 
     # ACROBOT
     # env = envs.get_environment("acrobot")
@@ -122,6 +123,8 @@ if __name__ == "__main__":
     # PADDLE BALL
     # env = envs.get_environment("paddle_ball")
     # policy_data_path = "./rl/policy/paddle_ball_policy.pkl"
+    env = envs.get_environment("paddle_ball_tracking")
+    policy_data_path = "./rl/policy/paddle_ball_tracking_policy.pkl"
 
     # HOPPER
     # env = envs.get_environment("hopper")
@@ -186,7 +189,7 @@ if __name__ == "__main__":
         cmd_ub = env.config.cmd_ub
 
         # set the a nominal command (in case no joystick is connected)
-        cmd = 0.0
+        cmd = env.config.cmd_nom
         
     # initial action and control
     action_prev = np.zeros(env.action_size, dtype=np.float32)  # previous Δq
