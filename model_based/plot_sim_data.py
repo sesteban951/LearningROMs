@@ -66,8 +66,8 @@ def label_or_idx(labels, i, prefix):
 if __name__ == "__main__":
 
     # data to import 
-    robot = "hopper"
-    # robot = "biped"
+    # robot = "hopper"
+    robot = "biped"
 
     # import the data file
     data = np.load(f"./model_based/{robot}/{robot}_data.npz")

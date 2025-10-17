@@ -377,6 +377,7 @@ class Simulation:
 
 ##################################################################################
 
+# main function
 if __name__ == "__main__":
 
     # create simulation config

@@ -1,7 +1,8 @@
 # standard includes
 import numpy as np
 import scipy as sp
-import time          
+import time        
+from dataclasses import dataclass
 
 # pacakge includes
 import mujoco 
@@ -12,6 +13,8 @@ from indeces import Biped_IDX
 from utils import InverseKinematics, bezier_curve, Joy
 
 ##################################################################################
+# CONTROLLER
+##################################################################################
 
 class Controller:
 
@@ -20,13 +23,12 @@ class Controller:
         # load the model file
         model = mujoco.MjModel.from_xml_path(model_file)
         self.model = model
-        sim_dt = model.opt.timestep
 
         # create indexing object
         self.idx = Biped_IDX()
 
         # create IK object
-        self.ik = InverseKinematics(model_file)
+        self.ik = InverseKinematics(model_file, verbose=False)
 
         # gains (NOTE: these does not take gear reduction into account)
         self.kp = np.array([200.0, 200.0, 200.0, 200.0])
@@ -390,6 +392,8 @@ class Controller:
 
 
 ##################################################################################
+# UTILS
+##################################################################################
 
 # update joystick command
 def update_joystick_command(joystick, scaling):
@@ -410,164 +414,218 @@ def update_joystick_command(joystick, scaling):
     return cmd
 
 ##################################################################################
+# SIMULATION
+##################################################################################
+
+
+# simulation config
+@dataclass
+class SimulationConfig:
+
+    # visualization parameters
+    visualization: bool = True
+
+    # time parameters
+    sim_dt: float = 0.002
+    sim_time: float = 10.0
+
+    # default command
+    cmd_scaling: float = 1.0
+    cmd_default: float = 0.0
+
+# main simulation class
+class Simulation:
+    
+    # initializer
+    def __init__(self, config: SimulationConfig):
+
+        # store config
+        self.config = config
+        
+    # simulate function
+    def simulate(self):
+        
+        # model path
+        model_file = "./models/biped.xml"
+
+        # load the file
+        model = mujoco.MjModel.from_xml_path(model_file)
+        data = mujoco.MjData(model) 
+
+        # change the sim timestep
+        model.opt.timestep = self.config.sim_dt
+
+        # compute the decimation
+        if self.config.visualization == True:
+
+            # setup the glfw window
+            if not glfw.init():
+                raise Exception("Could not initialize GLFW")
+            window = glfw.create_window(1080, 740, "Robot", None, None)
+            glfw.make_context_current(window)
+
+            # set the window to be resizable
+            width, height = glfw.get_framebuffer_size(window)
+            viewport = mujoco.MjrRect(0, 0, width, height)
+
+            # create camera to render the scene
+            cam = mujoco.MjvCamera()
+            opt = mujoco.MjvOption()
+            cam.distance = 2.5
+            cam.elevation = -15
+            cam.azimuth = 90
+            cam.lookat[1] = 0.0
+            cam.lookat[2] = 0.6
+            
+            # create the scene and context
+            scene = mujoco.MjvScene(model, maxgeom=1000)
+            context = mujoco.MjrContext(model, mujoco.mjtFontScale.mjFONTSCALE_200)
+
+            # rendering frequency
+            hz_render = 50.0
+
+            # wall clock timing variables
+            wall_start = time.time()
+            last_render = 0.0
+
+            # do one update of the scene
+            mujoco.mjv_updateScene(model, data, opt, None, cam, mujoco.mjtCatBit.mjCAT_ALL, scene)
+            mujoco.mjr_render(viewport, scene, context)
+            glfw.swap_buffers(window)
+            glfw.poll_events()
+        
+        # create an object for indexing
+        idx = Biped_IDX()
+
+        # create controller object
+        controller = Controller(model_file)
+
+        # create joystick object
+        joystick = Joy()
+
+        # set the initial state
+        key_name = "default"
+        key_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_KEY, key_name)
+        data.qpos = model.key_qpos[key_id]
+        data.qvel = model.key_qvel[key_id]
+
+        # simulation setup
+        t_max = self.config.sim_time
+
+        # command scaling
+        vx_cmd_scale = self.config.cmd_scaling
+        vx_cmd = self.config.cmd_default
+
+        # instantiate the data logging arrays
+        num_nodes = int(np.ceil(t_max / self.config.sim_dt)) + 1
+        t_data = np.zeros((num_nodes, 1))
+        q_data = np.zeros((num_nodes, model.nq))
+        v_data = np.zeros((num_nodes, model.nv))
+        u_data = np.zeros((num_nodes, model.nu))
+        c_data = np.zeros((num_nodes, 2))
+        cmd_data = np.zeros((num_nodes, 1))
+
+        # initialize the sim step counter
+        counter = 0
+
+        # main simulation loop
+        while  (counter < num_nodes):
+
+            # get the current sim time and state
+            t_sim = data.time
+
+            # update the joystick command
+            if joystick.isConnected and self.config.visualization == True:
+                vx_cmd = update_joystick_command(joystick, vx_cmd_scale)
+
+            # compute the control
+            tau = controller.compute_input(data, vx_cmd)
+
+            # set the torques
+            data.ctrl[:] = tau
+
+            # log the data
+            t_data[counter] = t_sim
+            q_data[counter, :] = data.qpos
+            v_data[counter, :] = data.qvel
+            u_data[counter, :] = tau
+            c_data[counter, :] = controller.parse_contact(data)
+            cmd_data[counter, :] = vx_cmd
+
+            # step the simulation
+            mujoco.mj_step(model, data)
+
+            # render at desired rate
+            if self.config.visualization == True:
+
+                # render at desired rate
+                if t_sim - last_render > 1.0 / hz_render:
+
+                    # move the camera to point at the robot
+                    cam.lookat[0] = data.qpos[idx.POS.POS_X]
+
+                    # update the scene, render
+                    mujoco.mjv_updateScene(model, data, opt, None, cam, mujoco.mjtCatBit.mjCAT_ALL, scene)
+                    mujoco.mjr_render(viewport, scene, context)
+
+                    # display the simulation time overlay
+                    label_text = f"Sim Time: {t_sim:.2f} sec \nWall Time: {wall_elapsed:.2f} sec\nCmd Vel: {vx_cmd:.2f} m/s"
+                    mujoco.mjr_overlay(
+                        mujoco.mjtFontScale.mjFONTSCALE_200,   # font scale
+                        mujoco.mjtGridPos.mjGRID_TOPLEFT,      # position on screen
+                        viewport,                              # this must be the MjrRect, not context
+                        label_text,                            # main overlay text (string, not bytes)
+                        "",                                    # optional secondary text
+                        context                                # render context
+                    )
+
+                    # swap the OpenGL buffers and poll for GUI events
+                    glfw.swap_buffers(window)
+                    glfw.poll_events()
+
+                    # record the last render time
+                    last_render = t_sim
+
+                # sync the sim time with the wall clock time
+                wall_elapsed = time.time() - wall_start
+                if t_sim > wall_elapsed:
+                    time.sleep(t_sim - wall_elapsed)
+
+            # increment the counter
+            counter += 1
+
+        # save the logged info to a npz file
+        file_name = "./model_based/biped/biped_data.npz"
+        np.savez(file_name,
+                t_log=t_data,
+                q_log=q_data,
+                v_log=v_data,
+                u_log=u_data,
+                c_log=c_data,
+                cmd_log=cmd_data)
+        print(f"Saved simulation data to {file_name}")
+
+        return t_data, q_data, v_data, u_data, c_data, cmd_data
+
+##################################################################################
 
 # main function
 if __name__ == "__main__":
-
-    # model path
-    model_file = "./models/biped.xml"
-
-    # load the file
-    model = mujoco.MjModel.from_xml_path(model_file)
-    data = mujoco.MjData(model)
-
-    # change the sim timestep
-    model.opt.timestep = 0.002
-
-    # compute the decimation
-    sim_dt = model.opt.timestep
-
-    # setup the glfw window
-    if not glfw.init():
-        raise Exception("Could not initialize GLFW")
-    window = glfw.create_window(1920, 1080, "Robot", None, None)
-    glfw.make_context_current(window)
-
-    # set the window to be resizable
-    width, height = glfw.get_framebuffer_size(window)
-    viewport = mujoco.MjrRect(0, 0, width, height)
-
-    # create camera to render the scene
-    cam = mujoco.MjvCamera()
-    opt = mujoco.MjvOption()
-    cam.distance = 2.5
-    cam.elevation = -15
-    cam.azimuth = 90
-    cam.lookat[1] = 0.0
-    cam.lookat[2] = 0.6
     
-    # create the scene and context
-    scene = mujoco.MjvScene(model, maxgeom=1000)
-    context = mujoco.MjrContext(model, mujoco.mjtFontScale.mjFONTSCALE_200)
+    # create simulation config
+    sim_config = SimulationConfig(
+        visualization=False, # visualize or not
+        sim_dt=0.002,        # sim time step
+        sim_time=10.0,       # total sim time
+        cmd_scaling=1.0,     # scaling of the command for joysticking 
+        cmd_default=0.0      # default forward velocity command
+    )
 
-    # create an object for indexing
-    idx = Biped_IDX()
+    # create simulation object
+    simulation = Simulation(sim_config)
 
-    # create controller object
-    controller = Controller(model_file)
-
-    # create joystick object
-    joystick = Joy()
-
-    # set the initial state
-    key_name = "standing"
-    key_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_KEY, key_name)
-    data.qpos = model.key_qpos[key_id]
-    data.qvel = model.key_qvel[key_id]
-
-    # simulation setup
-    hz_render = 50.0
-    t_max = 10.0
-
-    # command scaling
-    vx_cmd_scale = 1.0 
-    vx_cmd = 0.0
-
-    # wall clock timing variables
-    t_sim = 0.0
-    wall_start = time.time()
-    last_render = 0.0
-
-    # instantiate the simulation
-    num_nodes = int(np.ceil(t_max / sim_dt)) + 1
-    t_data = np.zeros((num_nodes, 1))
-    q_data = np.zeros((num_nodes, model.nq))
-    v_data = np.zeros((num_nodes, model.nv))
-    u_data = np.zeros((num_nodes, model.nu))
-    c_data = np.zeros((num_nodes, 2))
-    cmd_data = np.zeros((num_nodes, 1))
-    counter = 0
-
-    # do one update of the scene
-    mujoco.mjv_updateScene(model, data, opt, None, cam, mujoco.mjtCatBit.mjCAT_ALL, scene)
-    mujoco.mjr_render(viewport, scene, context)
-    glfw.swap_buffers(window)
-    glfw.poll_events()
-
-    while (not glfw.window_should_close(window)) and (counter <= num_nodes):
-
-        # get the current sim time and state
-        t_sim = data.time
-
-        # update the joystick command
-        if joystick.isConnected:
-            vx_cmd = update_joystick_command(joystick, vx_cmd_scale)
-
-        # compute the inputs
-        tau = controller.compute_input(data, vx_cmd)
-
-        # set the torques
-        data.ctrl[:] = tau
-
-        # log the data
-        t_data[counter] = t_sim
-        q_data[counter, :] = data.qpos
-        v_data[counter, :] = data.qvel
-        u_data[counter, :] = tau
-        c_data[counter, :] = controller.parse_contact(data)
-        cmd_data[counter, :] = vx_cmd
-
-        # step the simulation
-        mujoco.mj_step(model, data)
-
-        # render at desired rate
-        if t_sim - last_render > 1.0 / hz_render:
-
-            # move the camer to point at the robot
-            cam.lookat[0] = data.qpos[idx.POS.POS_X]
-
-            # update the scene, render
-            mujoco.mjv_updateScene(model, data, opt, None, cam, mujoco.mjtCatBit.mjCAT_ALL, scene)
-            mujoco.mjr_render(viewport, scene, context)
-
-            # display the simulation time overlay
-            label_text = f"Sim Time: {t_sim:.2f} sec \nWall Time: {wall_elapsed:.2f} sec\nCmd Vel: {vx_cmd:.2f} m/s"
-            mujoco.mjr_overlay(
-                mujoco.mjtFontScale.mjFONTSCALE_200,   # font scale
-                mujoco.mjtGridPos.mjGRID_TOPLEFT,      # position on screen
-                viewport,                              # this must be the MjrRect, not context
-                label_text,                            # main overlay text (string, not bytes)
-                "",                                    # optional secondary text
-                context                                # render context
-            )
-
-            # swap the OpenGL buffers and poll for GUI events
-            glfw.swap_buffers(window)
-            glfw.poll_events()
-
-            # record the last render time
-            last_render = t_sim
-
-        # increment the counter
-        counter += 1
-
-        # sync the sim time with the wall clock time
-        wall_elapsed = time.time() - wall_start
-        if t_sim > wall_elapsed:
-            time.sleep(t_sim - wall_elapsed)
-
-        # exit if the sim time exceeds max time
-        if t_sim >= t_max:
-            glfw.set_window_should_close(window, True)
-            break
-    
-    # save the logged info to a npz file
-    file_name = "./model_based/biped/biped_data.npz"
-    np.savez(file_name,
-             t_log=t_data,
-             q_log=q_data,
-             v_log=v_data,
-             u_log=u_data,
-             c_log=c_data,
-             cmd_log=cmd_data)
-    print(f"Saved simulation data to {file_name}")
+    # run the simulation
+    t0 = time.time()
+    t_log, q_log, v_log, u_log, c_log, cmd_log = simulation.simulate()
+    t1 = time.time()
+    print(f"Simulation time: {t1 - t0:.2f} seconds")

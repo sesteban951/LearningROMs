@@ -11,7 +11,10 @@ import pygame
 
 class InverseKinematics:
 
-    def __init__(self, model_file):
+    def __init__(self, model_file, verbose=False):
+
+        # print messages
+        self.verbose = verbose
 
         # load the mujoco model 
         model  = mujoco.MjModel.from_xml_path(model_file)
@@ -113,7 +116,8 @@ class InverseKinematics:
         if L > (self.L1 + self.L2):
 
             # print warning
-            print("IK: {px:.2f}, {pz:.2f} is out of reach".format(px=px, pz=pz))
+            if self.verbose:
+                print("IK: {px:.2f}, {pz:.2f} is out of reach".format(px=px, pz=pz))
     
             # project the point to the reachable space
             p = p * (self.L_tot - 1e-3) / L
@@ -121,7 +125,9 @@ class InverseKinematics:
             pz = p[1][0]
             L = self.L_tot - 1e-3
 
-            print("\tProjecting to {px:.2f}, {pz:.2f}".format(px=p[0][0], pz=p[1][0]))
+            # print projected point
+            if self.verbose:
+                print("\tProjecting to {px:.2f}, {pz:.2f}".format(px=p[0][0], pz=p[1][0]))
 
         # compute knee angle
         acos_arg = (L**2 - self.L1**2 - self.L2**2) / (- 2.0 * self.L1 * self.L2)
