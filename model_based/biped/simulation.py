@@ -614,7 +614,7 @@ if __name__ == "__main__":
     
     # create simulation config
     sim_config = SimulationConfig(
-        visualization=False, # visualize or not
+        visualization=True, # visualize or not
         sim_dt=0.002,        # sim time step
         sim_time=10.0,       # total sim time
         cmd_scaling=1.0,     # scaling of the command for joysticking 
