@@ -454,7 +454,7 @@ if __name__ == "__main__":
     idx = Biped_IDX()
 
     # create controller object
-    control = Controller(model_file)
+    controller = Controller(model_file)
 
     # create joystick object
     joystick = Joy()
@@ -504,7 +504,7 @@ if __name__ == "__main__":
             vx_cmd = update_joystick_command(joystick, vx_cmd_scale)
 
         # compute the inputs
-        tau = control.compute_input(data, vx_cmd)
+        tau = controller.compute_input(data, vx_cmd)
 
         # set the torques
         data.ctrl[:] = tau
@@ -514,7 +514,7 @@ if __name__ == "__main__":
         q_data[counter, :] = data.qpos
         v_data[counter, :] = data.qvel
         u_data[counter, :] = tau
-        c_data[counter, :] = control.parse_contact(data)
+        c_data[counter, :] = controller.parse_contact(data)
         cmd_data[counter, :] = vx_cmd
 
         # step the simulation
@@ -531,7 +531,7 @@ if __name__ == "__main__":
             mujoco.mjr_render(viewport, scene, context)
 
             # display the simulation time overlay
-            label_text = f"Sim Time: {t_sim:.2f} sec \nWall Time: {wall_elapsed:.2f} sec"
+            label_text = f"Sim Time: {t_sim:.2f} sec \nWall Time: {wall_elapsed:.2f} sec\nCmd Vel: {vx_cmd:.2f} m/s"
             mujoco.mjr_overlay(
                 mujoco.mjtFontScale.mjFONTSCALE_200,   # font scale
                 mujoco.mjtGridPos.mjGRID_TOPLEFT,      # position on screen
