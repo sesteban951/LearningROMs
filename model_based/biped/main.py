@@ -364,7 +364,7 @@ class Controller:
             v_right_des = v_swing_des[0].flatten()
 
         # print tracking info
-        print(f"v_cmd: {self.vx_cmd:.3f}, v_com: {v_com:.3f}")
+        # print(f"v_cmd: {self.vx_cmd:.3f}, v_com: {v_com:.3f}")
 
         return p_left_des, p_right_des, v_left_des, v_right_des
 
@@ -433,10 +433,10 @@ class Controller:
         left_foot_in_contact  = left_foot_force  > 1e-6
         right_foot_in_contact = right_foot_force > 1e-6
 
-        if left_foot_in_contact:
-            print("Left foot in contact, force: {:.3f}".format(left_foot_force))
-        if right_foot_in_contact:
-            print("Right foot in contact, force: {:.3f}".format(right_foot_force))
+        # if left_foot_in_contact:
+        #     print("Left foot in contact, force: {:.3f}".format(left_foot_force))
+        # if right_foot_in_contact:
+        #     print("Right foot in contact, force: {:.3f}".format(right_foot_force))
 
         return left_foot_in_contact, right_foot_in_contact
     
@@ -452,6 +452,9 @@ if __name__ == "__main__":
     # load the file
     model = mujoco.MjModel.from_xml_path(model_file)
     data = mujoco.MjData(model)
+
+    # change the sim timestep
+    model.opt.timestep = 0.002
 
     # setup the glfw window
     if not glfw.init():
@@ -490,7 +493,7 @@ if __name__ == "__main__":
 
     # simulation setup
     hz_render = 50.0
-    t_max = 60.0
+    t_max = 10.0
 
     # compute the decimation
     sim_dt = model.opt.timestep
@@ -500,13 +503,21 @@ if __name__ == "__main__":
     wall_start = time.time()
     last_render = 0.0
 
+    # instantiate the simulation
+    num_nodes = int(np.ceil(t_max / sim_dt)) + 1
+    t_data = np.zeros((num_nodes, 1))
+    q_data = np.zeros((num_nodes, model.nq))
+    v_data = np.zeros((num_nodes, model.nv))
+    u_data = np.zeros((num_nodes, model.nu))
+    counter = 0
+
     # do one update of the scene
     mujoco.mjv_updateScene(model, data, opt, None, cam, mujoco.mjtCatBit.mjCAT_ALL, scene)
     mujoco.mjr_render(viewport, scene, context)
     glfw.swap_buffers(window)
     glfw.poll_events()
 
-    while (not glfw.window_should_close(window)) and (t_sim < t_max):
+    while (not glfw.window_should_close(window)) and (counter <= num_nodes):
 
         # get the current sim time and state
         t_sim = data.time
@@ -516,6 +527,13 @@ if __name__ == "__main__":
 
         # set the torques
         data.ctrl[:] = tau
+
+        # log the data
+        t_data[counter] = t_sim
+        q_data[counter, :] = data.qpos
+        v_data[counter, :] = data.qvel
+        u_data[counter, :] = tau
+        counter += 1
 
         # step the simulation
         mujoco.mj_step(model, data)
@@ -557,3 +575,12 @@ if __name__ == "__main__":
         if t_sim >= t_max:
             glfw.set_window_should_close(window, True)
             break
+    
+    # save the logged info to a npz file
+    file_name = "./model_based/biped/biped_data.npz"
+    np.savez(file_name,
+             t_log=t_data,
+             q_log=q_data,
+             v_log=v_data,
+             u_log=u_data)
+    print(f"Saved simulation data to {file_name}")

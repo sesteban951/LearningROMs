@@ -1,6 +1,5 @@
 # standard includes
 import numpy as np
-import math
 import time
 
 # pacakge includes
@@ -184,7 +183,7 @@ class Controller:
         T_body = np.clip(T_body, -1, 1)
 
         # print some info
-        print("vx_cmd: {:2f}, vx: {:2f}, vx_err: {:2f}".format(self.vx_cmd, vx_body, self.vx_cmd - vx_body))
+        # print("vx_cmd: {:2f}, vx: {:2f}, vx_err: {:2f}".format(self.vx_cmd, vx_body, self.vx_cmd - vx_body))
         # print(f"F_leg: {F_leg:.2f}, T_body: {T_body:.2f}, Contact: {foot_in_contact}")
 
         # compute the torque
@@ -259,7 +258,7 @@ if __name__ == "__main__":
     # simulation setup
     hz_render = 50.0
     hz_control = 50.0
-    t_max = 60.0
+    t_max = 10.0
 
     # compute the decimation
     sim_dt = model.opt.timestep
@@ -272,31 +271,37 @@ if __name__ == "__main__":
     wall_start = time.time()
     last_render = 0.0
 
+    # instantiate the simulation
+    num_nodes = int(np.ceil(t_max / sim_dt)) + 1
+    t_data = np.zeros((num_nodes, 1))
+    q_data = np.zeros((num_nodes, model.nq))
+    v_data = np.zeros((num_nodes, model.nv))
+    u_data = np.zeros((num_nodes, model.nu))
+    counter = 0
+
     # do one update of the scene
     mujoco.mjv_updateScene(model, data, opt, None, cam, mujoco.mjtCatBit.mjCAT_ALL, scene)
     mujoco.mjr_render(viewport, scene, context)
     glfw.swap_buffers(window)
     glfw.poll_events()
 
-    while (not glfw.window_should_close(window)) and (t_sim < t_max):
+    while (not glfw.window_should_close(window)) and (counter <= num_nodes):
 
         # get the current sim time and state
         t_sim = data.time
 
-        # control at desired Hz
-        if counter % decimation == 0:
-
-            # compute the control
-            u = controller.compute_input(t_sim, data)
-
-            # reset the counter
-            counter = 0
-
-        # step the counter
-        counter += 1
+        # compute the control
+        tau = controller.compute_input(t_sim, data)
 
         # set the torques
-        data.ctrl[:] = u
+        data.ctrl[:] = tau
+
+        # log the data
+        t_data[counter] = t_sim
+        q_data[counter, :] = data.qpos
+        v_data[counter, :] = data.qvel
+        u_data[counter, :] = tau
+        counter += 1
 
         # step the simulation
         mujoco.mj_step(model, data)
@@ -338,3 +343,12 @@ if __name__ == "__main__":
         if t_sim >= t_max:
             glfw.set_window_should_close(window, True)
             break
+
+    # save the logged info to a npz file
+    file_name = "./model_based/hopper/hopper_data.npz"
+    np.savez(file_name,
+             t_log=t_data,
+             q_log=q_data,
+             v_log=v_data,
+             u_log=u_data)
+    print(f"Saved simulation data to {file_name}")
