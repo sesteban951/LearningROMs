@@ -1,8 +1,3 @@
-# standard imports
-import mujoco
-import numpy as np
-import math
-
 # joystick
 import pygame
 

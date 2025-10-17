@@ -25,9 +25,6 @@ class Controller:
         # create indexing object
         self.idx = Biped_IDX()
 
-        # create joystick object
-        self.joystick = Joy()
-
         # create IK object
         self.ik = InverseKinematics(model_file)
 
@@ -111,20 +108,13 @@ class Controller:
         # feedforward bias input for stepping
         self.u_bias = -0.025
 
+        # desired base orientation
+        self.base_orient_des = -0.2
+
         # which foot stepping controller to use
         self.foot_placement_ctrl = "LIP"   # "Raibert" or "LIP"
         # self.foot_placement_ctrl = "Raibert"   # "Raibert" or "LIP"
 
-        # velocity command parameters
-        self.vx_cmd_scale = 0.4    # m/s per unit joystick command
-        self.vx_cmd = 0.0          # desired forward velocity (used with joystick if connected)
-        
-        # low pass filter
-        f_cutoff = 0.3
-        omega_c = 2.0 * np.pi * f_cutoff
-        self.vx_cmd_alpha = np.exp(-omega_c * sim_dt)
-        self.vx_cmd_prev = 0.0    
-        self.vx_cmd_curr = 0.0    
 
     # update internal state and time
     def update_state(self, data):
@@ -217,35 +207,8 @@ class Controller:
             self.stance_foot_pos_W = _stance_pos_W.reshape(2,)
             self.swing_init_pos_W = _swing_init_pos_W.reshape(2,)
 
-    # update velocity command from joystick
-    def update_joystick_command(self):
-
-        # if joystick is connected
-        if self.joystick.isConnected:
-
-            # update the joystick inputs
-            self.joystick.update()
-
-            # get input
-            vx_cmd_raw = self.joystick.LS_Y
-            self.vx_cmd_curr = self.vx_cmd_scale * vx_cmd_raw
-
-            # low-pass filter
-            self.vx_cmd = (  (1.0 - self.vx_cmd_alpha) * self.vx_cmd_curr 
-                           + self.vx_cmd_alpha* self.vx_cmd_prev)
-            self.vx_cmd_prev = self.vx_cmd
-
-            # deadband
-            if abs(self.vx_cmd) < 0.05:
-                self.vx_cmd = 0.0
-
-        # no joystick
-        else:
-            # will just use the default that was set in the init
-            pass
-
     # compute the foot targets
-    def compute_foot_targets(self):
+    def compute_foot_targets(self, vx_cmd):
 
         # parse the swing foot initial position and stance foot position
         stance_pos_W = np.array([self.stance_foot_pos_W[0], 
@@ -271,11 +234,11 @@ class Controller:
             v_com_pre = x_com_pre[1][0]
 
             # compute the LIP preimpact state
-            p_com_LIP_pre = (self.vx_cmd * self.T) / (2.0 + self.T_DSP * self.sigma_P1)
-            v_com_LIP_pre =  self.sigma_P1 * (self.vx_cmd * self.T) / (2.0 + self.T_DSP * self.sigma_P1)
+            p_com_LIP_pre = (vx_cmd * self.T) / (2.0 + self.T_DSP * self.sigma_P1)
+            v_com_LIP_pre =  self.sigma_P1 * (vx_cmd * self.T) / (2.0 + self.T_DSP * self.sigma_P1)
 
             # LIP foot placement (deadbeat control)
-            u_ff = self.vx_cmd * self.T_SSP
+            u_ff = vx_cmd * self.T_SSP
             u_fb = self.Kp_db * (p_com_pre - p_com_LIP_pre) + self.Kd_db * (v_com_pre - v_com_LIP_pre)
             u = u_ff + u_fb + self.u_bias
 
@@ -284,7 +247,7 @@ class Controller:
 
             # Raibert foot placement controller
             u_ff = 0.5 * v_com * self.T_SSP
-            u_fb = self.Kd_raibert * (v_com - self.vx_cmd) + self.Kp_raibert * (p_com - 0.0)
+            u_fb = self.Kd_raibert * (v_com - vx_cmd) + self.Kp_raibert * (p_com - 0.0)
             u = u_ff + u_fb + self.u_bias
 
         # invalid foot placement controller
@@ -363,13 +326,10 @@ class Controller:
             p_right_des = p_swing_des[0].flatten()
             v_right_des = v_swing_des[0].flatten()
 
-        # print tracking info
-        # print(f"v_cmd: {self.vx_cmd:.3f}, v_com: {v_com:.3f}")
-
         return p_left_des, p_right_des, v_left_des, v_right_des
 
     # compute the control input
-    def compute_input(self, data):
+    def compute_input(self, data, vel_cmd):
 
         # update the internal state
         self.update_state(data)
@@ -380,14 +340,11 @@ class Controller:
         # update the timing variables
         self.update_timing(data)
 
-        # update the joystick command
-        self.update_joystick_command()
-
         # print contact info
         self.parse_contact(data)
 
         # compute desired foot positions and velocities
-        p_left_des_W, p_right_des_W, v_left_des_W, v_right_des_W = self.compute_foot_targets()
+        p_left_des_W, p_right_des_W, v_left_des_W, v_right_des_W = self.compute_foot_targets(vel_cmd)
         p_left_des_W = p_left_des_W.reshape(2,1)
         p_right_des_W = p_right_des_W.reshape(2,1)
         v_left_des_W = v_left_des_W.reshape(2,1)
@@ -395,7 +352,7 @@ class Controller:
 
         # compute desired base position and velocity
         p_base_des_W = np.array([self.q_base[0], self.z_base + self.z_foot_offset]).reshape(2,1)
-        o_base_des_W = -0.2
+        o_base_des_W = self.base_orient_des
         v_base_des_W = np.array([self.v_base[0], 0.0]).reshape(2,1)
         w_base_des_W = 0.0
 
@@ -429,17 +386,28 @@ class Controller:
         left_foot_force  = data.sensordata[self.sid_left_foot]
         right_foot_force = data.sensordata[self.sid_right_foot]
 
-        # thresholds avoid noise
-        left_foot_in_contact  = left_foot_force  > 1e-6
-        right_foot_in_contact = right_foot_force > 1e-6
+        return left_foot_force, right_foot_force
 
-        # if left_foot_in_contact:
-        #     print("Left foot in contact, force: {:.3f}".format(left_foot_force))
-        # if right_foot_in_contact:
-        #     print("Right foot in contact, force: {:.3f}".format(right_foot_force))
 
-        return left_foot_in_contact, right_foot_in_contact
-    
+##################################################################################
+
+# update joystick command
+def update_joystick_command(joystick, scaling):
+
+    # update the joystick state
+    joystick.update()
+
+    # get the axis value
+    raw_val = joystick.LS_Y
+
+    # deadband
+    if abs(raw_val) < 0.1:
+        raw_val = 0.0
+
+    # scale the value
+    cmd = scaling * raw_val
+
+    return cmd
 
 ##################################################################################
 
@@ -455,6 +423,9 @@ if __name__ == "__main__":
 
     # change the sim timestep
     model.opt.timestep = 0.002
+
+    # compute the decimation
+    sim_dt = model.opt.timestep
 
     # setup the glfw window
     if not glfw.init():
@@ -485,6 +456,9 @@ if __name__ == "__main__":
     # create controller object
     control = Controller(model_file)
 
+    # create joystick object
+    joystick = Joy()
+
     # set the initial state
     key_name = "standing"
     key_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_KEY, key_name)
@@ -495,8 +469,9 @@ if __name__ == "__main__":
     hz_render = 50.0
     t_max = 10.0
 
-    # compute the decimation
-    sim_dt = model.opt.timestep
+    # command scaling
+    vx_cmd_scale = 1.0 
+    vx_cmd = 0.0
 
     # wall clock timing variables
     t_sim = 0.0
@@ -509,6 +484,8 @@ if __name__ == "__main__":
     q_data = np.zeros((num_nodes, model.nq))
     v_data = np.zeros((num_nodes, model.nv))
     u_data = np.zeros((num_nodes, model.nu))
+    c_data = np.zeros((num_nodes, 2))
+    cmd_data = np.zeros((num_nodes, 1))
     counter = 0
 
     # do one update of the scene
@@ -522,8 +499,12 @@ if __name__ == "__main__":
         # get the current sim time and state
         t_sim = data.time
 
+        # update the joystick command
+        if joystick.isConnected:
+            vx_cmd = update_joystick_command(joystick, vx_cmd_scale)
+
         # compute the inputs
-        tau = control.compute_input(data)
+        tau = control.compute_input(data, vx_cmd)
 
         # set the torques
         data.ctrl[:] = tau
@@ -533,7 +514,8 @@ if __name__ == "__main__":
         q_data[counter, :] = data.qpos
         v_data[counter, :] = data.qvel
         u_data[counter, :] = tau
-        counter += 1
+        c_data[counter, :] = control.parse_contact(data)
+        cmd_data[counter, :] = vx_cmd
 
         # step the simulation
         mujoco.mj_step(model, data)
@@ -566,6 +548,9 @@ if __name__ == "__main__":
             # record the last render time
             last_render = t_sim
 
+        # increment the counter
+        counter += 1
+
         # sync the sim time with the wall clock time
         wall_elapsed = time.time() - wall_start
         if t_sim > wall_elapsed:
@@ -582,5 +567,7 @@ if __name__ == "__main__":
              t_log=t_data,
              q_log=q_data,
              v_log=v_data,
-             u_log=u_data)
+             u_log=u_data,
+             c_log=c_data,
+             cmd_log=cmd_data)
     print(f"Saved simulation data to {file_name}")
