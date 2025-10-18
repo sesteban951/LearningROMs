@@ -208,6 +208,9 @@ class Simulation:
 
         # store config
         self.config = config
+
+        # create joystick object
+        self.joystick = Joy()
         
     # simulate function
     def simulate(self):
@@ -267,9 +270,6 @@ class Simulation:
         # create controller object
         controller = Controller(model_file)
 
-        # create joystick object
-        joystick = Joy()
-
         # set the initial state
         key_name = "default"
         key_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_KEY, key_name)
@@ -302,8 +302,8 @@ class Simulation:
             t_sim = data.time
 
             # update the joystick command
-            if joystick.isConnected and self.config.visualization == True:
-                vx_cmd = update_joystick_command(joystick, vx_cmd_scale)
+            if self.joystick.isConnected and self.config.visualization == True:
+                vx_cmd = update_joystick_command(self.joystick, vx_cmd_scale)
 
             # compute the control
             tau = controller.compute_input(data, vx_cmd)

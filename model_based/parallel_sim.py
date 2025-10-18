@@ -124,7 +124,7 @@ if __name__ == "__main__":
 
     # workers and runs
     num_workers = 16   # mp.cpu_count()
-    num_runs = 64     # workers will reuse the same sim object for multiple runs
+    num_runs = 64      # workers will reuse the same sim object for multiple runs
 
     # safer start for MuJoCo/GL
     try:
