@@ -12,7 +12,7 @@ import mujoco
 
 # struct to hold the configuration parameters
 @struct.dataclass
-class CartPoleConfig:
+class CartPoleTrackingConfig:
     """Config dataclass for cart-pole."""
 
     # model path (NOTE: relative the script that calls this class)
@@ -22,7 +22,7 @@ class CartPoleConfig:
     physics_steps_per_control_step: int = 1
 
     # Reward function coefficients
-    reward_cart_pos: float = 0.8
+    reward_cart_pos: float = 1.0
     reward_pole_pos: float = 1.0
     reward_cart_vel: float = 0.005
     reward_pole_vel: float = 0.005
@@ -38,25 +38,31 @@ class CartPoleConfig:
     lb_theta_dot: float = -10.0
     ub_theta_dot: float =  10.0
 
+    # sample position commands
+    cmd_lb: float = -1.0      # lower bound of command sampling range
+    cmd_ub: float =  1.0      # upper bound of command sampling range
+    cmd_nom: float =  0.0      # nominal command (for bernoulli sampling)
+    bernoulli_p: float = 0.1   # probability of sampling the nominal command, p ∈ [0, 1]
+
 
 # environment class
-class CartPoleEnv(PipelineEnv):
+class CartPoleTrackingEnv(PipelineEnv):
     """
-    Environment for training a cart-pole swingup task.
+    Environment for training a cart-pole swingup task (with position tracking).
 
     States: x = (pos, theta, vel, dtheta), shape=(4,)
-    Observations: o = (pos, cos(theta), sin(theta), vel, dtheta), shape=(5,)
+    Observations: o = (pos, cos(theta), sin(theta), vel, dtheta, pos_cmd), shape=(6,)
     Actions: a = tau, the force on the cart, shape=(1,)
     """
 
     # initialize the environment
-    def __init__(self, config: CartPoleConfig = CartPoleConfig()):
+    def __init__(self, config: CartPoleTrackingConfig = CartPoleTrackingConfig()):
 
         # robot name
         self.robot_name = "cart_pole"
 
         # environment name
-        self.env_name = "cart_pole"
+        self.env_name = "cart_pole_tracking"
 
         # load the config
         self.config = config
@@ -77,7 +83,7 @@ class CartPoleEnv(PipelineEnv):
         # n_frames: number of sim steps per control step, dt = n_frames * xml_dt
 
         # print message
-        print(f"Initialized CartPoleEnv with model [{self.config.model_path}].")
+        print(f"Initialized CartPoleTrackingEnv with model [{self.config.model_path}].")
 
     # reset function
     def reset(self, rng):
@@ -93,7 +99,7 @@ class CartPoleEnv(PipelineEnv):
         """
         
         # split the rng to sample unique initial conditions
-        rng, rng1, rng2 = jax.random.split(rng, 3)
+        rng, rng1, rng2, rng3 = jax.random.split(rng, 4)
 
         # set the state bounds for sampling initial conditions
         qpos_lb = jnp.array([self.config.lb_pos, self.config.lb_theta])
@@ -104,12 +110,20 @@ class CartPoleEnv(PipelineEnv):
         # sample the initial state
         qpos = jax.random.uniform(rng1, (2,), minval=qpos_lb, maxval=qpos_ub)
         qvel = jax.random.uniform(rng2, (2,), minval=qvel_lb, maxval=qvel_ub)
+
+        # sample new position command
+        pos_cmd = jax.random.uniform(rng3, shape=(), 
+                                     minval=self.config.cmd_lb, 
+                                     maxval=self.config.cmd_ub)
+        # with some probability, set the command to the nominal value
+        bernoulli_sample = jax.random.bernoulli(rng, p=self.config.bernoulli_p, shape=())
+        pos_cmd = jnp.where(bernoulli_sample, self.config.cmd_nom, pos_cmd)
         
         # reset the physics state
         data = self.pipeline_init(qpos, qvel)
 
         # reset the observation
-        obs = self._compute_obs(data)
+        obs = self._compute_obs(data, pos_cmd)
 
         # reset reward
         reward, done = jnp.zeros(2)
@@ -123,7 +137,8 @@ class CartPoleEnv(PipelineEnv):
 
         # state info
         info = {"rng": rng,
-                "step": 0}
+                "step": 0,
+                "pos_cmd": pos_cmd}
         
         return State(pipeline_state=data,
                      obs=obs,
@@ -147,8 +162,11 @@ class CartPoleEnv(PipelineEnv):
         # step the physics
         data = self.pipeline_step(state.pipeline_state, action)
 
+        # pull the command from the state info
+        pos_cmd = state.info["pos_cmd"]
+
         # update the observations
-        obs = self._compute_obs(data)
+        obs = self._compute_obs(data, pos_cmd)
 
         # data
         pos = data.qpos[0]
@@ -163,7 +181,7 @@ class CartPoleEnv(PipelineEnv):
         theta_angle_vec = jnp.array([cos_theta - 1.0, sin_theta]) # want (0, 0)
 
         # compute error terms
-        cart_pos_err = jnp.square(pos).sum()
+        cart_pos_err = jnp.square(pos - pos_cmd).sum()
         pole_pos_err = jnp.square(theta_angle_vec).sum()
         cart_vel_err = jnp.square(vel).sum()
         theta_dot_err = jnp.square(theta_dot).sum()
@@ -194,13 +212,15 @@ class CartPoleEnv(PipelineEnv):
                              reward=reward)
 
     # internal function to compute the observation
-    def _compute_obs(self, data):
+    def _compute_obs(self, data, pos_cmd):
         """
         Compute the observation from the physics state.
 
         Args:
             data: brax.physics.base.State object
                   The physics state of the environment.
+            pos_cmd: float
+                     The desired cart position command.
         """
 
         # extract the relevant information from the data
@@ -214,15 +234,16 @@ class CartPoleEnv(PipelineEnv):
                          jnp.cos(theta), # normalized angle
                          jnp.sin(theta), # normalized angle
                          vel,            # cart velocity
-                         theta_dot])     # pole angular velocity
-        
+                         theta_dot,      # pole angular velocity
+                         pos_cmd])       # position command
+
         return obs
     
     @property
     def observation_size(self):
         """Returns the size of the observation space."""
-        return 5
-    
+        return 6
+
     @property
     def action_size(self):
         """Returns the size of the action space."""
@@ -230,4 +251,4 @@ class CartPoleEnv(PipelineEnv):
 
 
 # register the environment
-envs.register_environment("cart_pole", CartPoleEnv)
+envs.register_environment("cart_pole_tracking", CartPoleTrackingEnv)

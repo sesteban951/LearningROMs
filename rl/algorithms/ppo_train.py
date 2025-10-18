@@ -59,7 +59,7 @@ class PPO_Train:
     def create_summary_writer(self):
 
         # get current datetime for logging
-        self.robot_name = self.env.robot_name
+        self.robot_name = self.env.env_name
         self.current_datetime = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
         log_file = f"./rl/log/{self.robot_name}_log_{self.current_datetime}"
 

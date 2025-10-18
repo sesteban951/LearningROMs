@@ -1,4 +1,4 @@
-# Parallel Simulation
+# Parallel Simulation (RL Based Control)
 Run scripts from the project root.
 
 1) Ensure all required packages are installed. 

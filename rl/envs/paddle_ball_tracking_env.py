@@ -12,7 +12,7 @@ import mujoco
 
 # struct to hold the configuration parameters
 @struct.dataclass
-class PaddleBallConfig:
+class PaddleBallTrackingConfig:
     """Config dataclass for paddle ball."""
 
     # model path (NOTE: relative the script that calls this class)
@@ -39,11 +39,17 @@ class PaddleBallConfig:
     lb_paddle_vel: float = -5.0
     ub_paddle_vel: float =  5.0
 
+    # sample position commands
+    cmd_lb: float = 1.0        # lower bound of command sampling range
+    cmd_ub: float = 2.0        # upper bound of command sampling range
+    cmd_nom: float = 1.5       # nominal command (for bernoulli sampling)
+    bernoulli_p: float = 0.1   # probability of sampling the nominal command, p ∈ [0, 1]
+
 
 # environment class
-class PaddleBallEnv(PipelineEnv):
+class PaddleBallTrackingEnv(PipelineEnv):
     """
-    Environment for training a paddle ball bouncing task.
+    Environment for training a paddle ball bouncing task (with tracking a height).
 
     States: x = (pos_ball, pos_paddle, vel_ball, vel_paddle), shape=(4,)
     Observations: o = (pos_ball, pos_paddle, vel_ball, vel_paddle), shape=(4,)
@@ -51,13 +57,13 @@ class PaddleBallEnv(PipelineEnv):
     """
 
     # initialize the environment
-    def __init__(self, config: PaddleBallConfig = PaddleBallConfig()):
+    def __init__(self, config: PaddleBallTrackingConfig = PaddleBallTrackingConfig()):
 
         # robot name
         self.robot_name = "paddle_ball"
 
         # environment name
-        self.env_name = "paddle_ball"
+        self.env_name = "paddle_ball_tracking"
 
         # load the config
         self.config = config
@@ -78,7 +84,7 @@ class PaddleBallEnv(PipelineEnv):
         # n_frames: number of sim steps per control step, dt = n_frames * xml_dt
 
         # print message
-        print(f"Initialized PaddleBallEnv with model [{self.config.model_path}].")
+        print(f"Initialized PaddleBallTrackingEnv with model [{self.config.model_path}].")
 
     # reset function
     def reset(self, rng):
@@ -94,7 +100,7 @@ class PaddleBallEnv(PipelineEnv):
         """
         
         # split the rng to sample unique initial conditions
-        rng, rng1, rng2 = jax.random.split(rng, 3)
+        rng, rng1, rng2, rng3 = jax.random.split(rng, 4)
 
         # set the state bounds for sampling initial conditions
         qpos_lb = jnp.array([self.config.lb_ball_pos, self.config.lb_paddle_pos])
@@ -105,12 +111,20 @@ class PaddleBallEnv(PipelineEnv):
         # sample the initial state
         qpos = jax.random.uniform(rng1, (2,), minval=qpos_lb, maxval=qpos_ub)
         qvel = jax.random.uniform(rng2, (2,), minval=qvel_lb, maxval=qvel_ub)
+
+        # sample new position command
+        pos_cmd = jax.random.uniform(rng3, shape=(), 
+                                     minval=self.config.cmd_lb, 
+                                     maxval=self.config.cmd_ub)
+        # with some probability, set the command to the nominal value
+        bernoulli_sample = jax.random.bernoulli(rng, p=self.config.bernoulli_p, shape=())
+        pos_cmd = jnp.where(bernoulli_sample, self.config.cmd_nom, pos_cmd)
         
         # reset the physics state
         data = self.pipeline_init(qpos, qvel)
 
         # reset the observation
-        obs = self._compute_obs(data)
+        obs = self._compute_obs(data, pos_cmd)
 
         # reset reward
         reward, done = jnp.zeros(2)
@@ -124,7 +138,8 @@ class PaddleBallEnv(PipelineEnv):
 
         # state info
         info = {"rng": rng,
-                "step": 0}
+                "step": 0,
+                "pos_cmd": pos_cmd}
         
         return State(pipeline_state=data,
                      obs=obs,
@@ -148,8 +163,11 @@ class PaddleBallEnv(PipelineEnv):
         # step the physics
         data = self.pipeline_step(state.pipeline_state, action)
 
+        # pull the command from the state info
+        pos_cmd = state.info["pos_cmd"]
+
         # update the observations
-        obs = self._compute_obs(data)
+        obs = self._compute_obs(data, pos_cmd)
 
         # data
         ball_pos = data.qpos[0]
@@ -159,7 +177,7 @@ class PaddleBallEnv(PipelineEnv):
         tau = data.ctrl
 
         # desired position of the ball and paddle
-        des_ball_pos = 1.5
+        des_ball_pos = pos_cmd
         des_paddle_pos = 0.5
 
         # compute error terms
@@ -195,13 +213,15 @@ class PaddleBallEnv(PipelineEnv):
                              reward=reward)
 
     # internal function to compute the observation
-    def _compute_obs(self, data):
+    def _compute_obs(self, data, pos_cmd):
         """
         Compute the observation from the physics state.
 
         Args:
             data: brax.physics.base.State object
                   The physics state of the environment.
+            pos_cmd: float
+                     The desired ball position command.
         """
 
         # extract the relevant information from the data
@@ -214,15 +234,16 @@ class PaddleBallEnv(PipelineEnv):
         obs = jnp.array([ball_pos,            # ball position
                          paddle_pos,          # paddle position
                          ball_vel,            # ball velocity
-                         paddle_vel])         # paddle velocity
+                         paddle_vel,          # paddle velocity
+                         pos_cmd])            # ball position command
 
         return obs
     
     @property
     def observation_size(self):
         """Returns the size of the observation space."""
-        return 4
-    
+        return 5
+
     @property
     def action_size(self):
         """Returns the size of the action space."""
@@ -230,4 +251,4 @@ class PaddleBallEnv(PipelineEnv):
 
 
 # register the environment
-envs.register_environment("paddle_ball", PaddleBallEnv)
+envs.register_environment("paddle_ball_tracking", PaddleBallTrackingEnv)

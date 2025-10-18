@@ -110,6 +110,9 @@ class BipedEnv(PipelineEnv):
         # robot name
         self.robot_name = "biped"
 
+        # environment name
+        self.env_name = "biped"
+
         # load the config
         self.config = config
 

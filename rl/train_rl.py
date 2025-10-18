@@ -15,13 +15,17 @@ import brax.training.distribution as distribution
 
 # custom imports
 from envs.cart_pole_env import CartPoleEnv, CartPoleConfig
+from envs.cart_pole_tracking_env import CartPoleTrackingEnv, CartPoleTrackingConfig
 from envs.acrobot_env import AcrobotEnv, AcrobotConfig
 from envs.biped_env import BipedEnv, BipedConfig
 from envs.biped_basic_env import BipedBasicEnv, BipedBasicConfig
 from envs.hopper_env import HopperEnv, HopperConfig
+from envs.hopper_tracking_env import HopperTrackingEnv, HopperTrackingConfig
 from envs.paddle_ball_env import PaddleBallEnv, PaddleBallConfig
+from envs.paddle_ball_tracking_env import PaddleBallTrackingEnv, PaddleBallTrackingConfig
 from algorithms.ppo_train import PPO_Train
 from algorithms.custom_networks import BraxPPONetworksWrapper, MLPConfig, MLP
+
 
 if __name__ == "__main__":
 
@@ -34,9 +38,10 @@ if __name__ == "__main__":
 
     # Initialize the environment and PPO hyperparameters
     # env = envs.get_environment("cart_pole")
+    # env = envs.get_environment("cart_pole_tracking")
     # policy_network_config = MLPConfig(
     #     layer_sizes=(32, 32, 32, 32, 2*env.action_size),   # policy hidden layer sizes
-    #     activation_fn_name="relu",                        # activation function
+    #     activation_fn_name="relu",                         # activation function
     # )
     # value_network_config = MLPConfig(
     #     layer_sizes=(256, 256, 256, 256, 256, 1),  # value hidden layer sizes
@@ -48,7 +53,7 @@ if __name__ == "__main__":
     #     action_distribution=distribution.NormalTanhDistribution
     # )
     # ppo_config = dict(
-    #     num_timesteps=80_000_000,      
+    #     num_timesteps=100_000_000,      
     #     num_evals=10,                  
     #     reward_scaling=0.1,            
     #     episode_length=200,            
@@ -100,6 +105,7 @@ if __name__ == "__main__":
 
     # Initialize the environment and PPO hyperparameters
     # env = envs.get_environment("paddle_ball")
+    # env = envs.get_environment("paddle_ball_tracking")
     # policy_network_config = MLPConfig(
     #     layer_sizes=(32, 32, 32, 32, 2*env.action_size),   # policy hidden layer sizes
     #     activation_fn_name="swish",                        # activation function
@@ -114,7 +120,7 @@ if __name__ == "__main__":
     #     action_distribution=distribution.NormalTanhDistribution
     # )
     # ppo_config = dict(
-    #     num_timesteps=80_000_000,      
+    #     num_timesteps=100_000_000,      
     #     num_evals=10,                  
     #     reward_scaling=0.1,            
     #     episode_length=500,            
@@ -132,7 +138,8 @@ if __name__ == "__main__":
     # )
 
     # Initialize the environment and PPO hyperparameters
-    env = envs.get_environment("hopper")
+    # env = envs.get_environment("hopper")
+    env = envs.get_environment("hopper_tracking")
     policy_network_config = MLPConfig(
         layer_sizes=(32, 32, 32, 32, 2*env.action_size),   # policy hidden layer sizes
         activation_fn_name="swish",                        # activation function
@@ -147,7 +154,7 @@ if __name__ == "__main__":
         action_distribution=distribution.NormalTanhDistribution
     )
     ppo_config = dict(
-        num_timesteps=50_000_000,      
+        num_timesteps=60_000_000,      
         num_evals=10,                  
         reward_scaling=0.1,            
         episode_length=600,            

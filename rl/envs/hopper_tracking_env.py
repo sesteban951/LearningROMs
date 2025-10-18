@@ -12,7 +12,7 @@ import mujoco
 
 # struct to hold the configuration parameters
 @struct.dataclass
-class HopperConfig:
+class HopperTrackingConfig:
     """Config dataclass for hopper."""
 
     # model path (NOTE: relative the script that calls this class)
@@ -25,7 +25,7 @@ class HopperConfig:
     reward_torso_height: float = 4.0   # reward for torso height
     reward_torso_angle: float = 0.5    # reward for torso angle
     reward_leg_pos: float = 0.01        # reward for leg position
-    reward_torso_vel_x: float = 1.0      # reward for zero velocity
+    reward_torso_vel_x: float = 2.0      # reward for zero velocity
     reward_torso_vel_z: float = 0.01      # reward for zero velocity
     reward_torso_vel_angle: float = 0.01      # reward for zero velocity
     reward_leg_vel: float = 0.001        # reward for zero leg velocity
@@ -33,7 +33,6 @@ class HopperConfig:
 
     # desired values
     desired_pos_z: float = 2.0  # desired torso height, achieved by hopping
-    desired_vel_x: float = 1.0  # desired forward velocity
 
     # Ranges for sampling initial conditions
     lb_torso_height: float = 1.0
@@ -51,10 +50,17 @@ class HopperConfig:
     lb_leg_vel: float = -5.0
     ub_leg_vel: float =  5.0
 
+    # sample velocity commands
+    cmd_lb: float = -1.0      # lower bound of command sampling range
+    cmd_ub: float =  1.0      # upper bound of command sampling range
+    cmd_nom: float =  0.0      # nominal command (for bernoulli sampling)
+    bernoulli_p: float = 0.1   # probability of sampling the nominal command, p ∈ [0, 1]
+
+
 # environment class
-class HopperEnv(PipelineEnv):
+class HopperTrackingEnv(PipelineEnv):
     """
-    Environment for training a hopper hopping task.
+    Environment for training a hopper hopping task (with velocity targets).
     
     States: x = (pos_x, pos_z, theta, leg_pos, vel_x, vel_z, theta_dot, leg_vel), shape=(8,)
     Observations: o = (pos_z, cos(theta), sin(theta), leg_pos, vel_x, vel_z, theta_dot, leg_vel), shape=(8,)
@@ -62,13 +68,13 @@ class HopperEnv(PipelineEnv):
     """
 
     # initialize the environment
-    def __init__(self, config: HopperConfig = HopperConfig()):
+    def __init__(self, config: HopperTrackingConfig = HopperTrackingConfig()):
 
         # robot name
         self.robot_name = "hopper"
 
         # environment name
-        self.env_name = "hopper"
+        self.env_name = "hopper_tracking"
 
         # load the config
         self.config = config
@@ -87,7 +93,7 @@ class HopperEnv(PipelineEnv):
         # n_frames: number of sim steps per control step, dt = n_frames * xml_dt
 
         # print message
-        print(f"Initialized HopperEnv with model [{self.config.model_path}].")
+        print(f"Initialized HopperTrackingEnv with model [{self.config.model_path}].")
 
     # reset function
     def reset(self, rng):
@@ -103,7 +109,7 @@ class HopperEnv(PipelineEnv):
         """
         
         # split the rng to sample unique initial conditions
-        rng, rng1, rng2 = jax.random.split(rng, 3)
+        rng, rng1, rng2, rng3 = jax.random.split(rng, 4)
 
         # set the state bounds for sampling initial conditions
         qpos_lb = jnp.array([-0.001, self.config.lb_torso_height, self.config.lb_angle_pos, self.config.lb_leg_pos])
@@ -115,11 +121,19 @@ class HopperEnv(PipelineEnv):
         qpos = jax.random.uniform(rng1, (4,), minval=qpos_lb, maxval=qpos_ub)
         qvel = jax.random.uniform(rng2, (4,), minval=qvel_lb, maxval=qvel_ub)
 
+        # sample new velocity command
+        vel_cmd = jax.random.uniform(rng3, (), 
+                                     minval=self.config.cmd_lb, 
+                                     maxval=self.config.cmd_ub)
+        # with some probability, set the command to the nominal value
+        bernoulli_sample = jax.random.bernoulli(rng, p=self.config.bernoulli_p, shape=())
+        vel_cmd = jnp.where(bernoulli_sample, self.config.cmd_nom, vel_cmd)
+
         # reset the physics state
         data = self.pipeline_init(qpos, qvel)
 
         # reset the observation
-        obs = self._compute_obs(data)
+        obs = self._compute_obs(data, vel_cmd)
 
         # reset reward
         reward, done = jnp.zeros(2)
@@ -136,7 +150,8 @@ class HopperEnv(PipelineEnv):
 
         # state info
         info = {"rng": rng,
-                "step": 0}
+                "step": 0,
+                "vel_cmd": vel_cmd}
         
         return State(pipeline_state=data,
                      obs=obs,
@@ -160,8 +175,11 @@ class HopperEnv(PipelineEnv):
         # step the physics
         data = self.pipeline_step(state.pipeline_state, action)
 
+        # pull out the command from the state info
+        vel_cmd = state.info["vel_cmd"]
+
         # update the observations
-        obs = self._compute_obs(data)
+        obs = self._compute_obs(data, vel_cmd)
 
         # data
         pos_z = data.qpos[1]
@@ -182,7 +200,7 @@ class HopperEnv(PipelineEnv):
         torso_height_err = jnp.square(pos_z - self.config.desired_pos_z).sum()
         torso_angle_err = jnp.square(theta_angle_vec).sum()
         leg_pos_err = jnp.square(leg_pos).sum()
-        torso_vel_x_err = jnp.square(vel_x - self.config.desired_vel_x).sum()
+        torso_vel_x_err = jnp.square(vel_x - vel_cmd).sum()
         torso_vel_z_err = jnp.square(vel_z).sum()
         torso_vel_angle_err = jnp.square(theta_dot).sum()
         leg_vel_err = jnp.square(leg_vel).sum()
@@ -192,7 +210,7 @@ class HopperEnv(PipelineEnv):
         reward_torso_height = -self.config.reward_torso_height * torso_height_err
         reward_torso_angle = -self.config.reward_torso_angle * torso_angle_err
         reward_leg_pos = -self.config.reward_leg_pos * leg_pos_err
-        reward_torso_vel_x = -self.config.reward_torso_vel_x * torso_vel_x_err
+        reward_torso_vel_x = jnp.exp(- torso_vel_x_err / 0.25) * self.config.reward_torso_vel_x
         reward_torso_vel_z = -self.config.reward_torso_vel_z * torso_vel_z_err
         reward_torso_vel_angle = -self.config.reward_torso_vel_angle * torso_vel_angle_err
         reward_leg_vel = -self.config.reward_leg_vel * leg_vel_err
@@ -219,13 +237,15 @@ class HopperEnv(PipelineEnv):
                              reward=reward)
 
     # internal function to compute the observation
-    def _compute_obs(self, data):
+    def _compute_obs(self, data, vel_cmd):
         """
         Compute the observation from the physics state.
 
         Args:
             data: brax.physics.base.State object
                   The physics state of the environment.
+            vel_cmd: float
+                     The desired velocity command.
         """
 
         # extract the relevant information from the data
@@ -245,14 +265,15 @@ class HopperEnv(PipelineEnv):
                          vel_x, 
                          vel_z,
                          theta_dot,
-                         leg_vel])
+                         leg_vel,
+                         vel_cmd])
 
         return obs
     
     @property
     def observation_size(self):
         """Returns the size of the observation space."""
-        return 8
+        return 9
 
     @property
     def action_size(self):
@@ -261,4 +282,4 @@ class HopperEnv(PipelineEnv):
 
 
 # register the environment
-envs.register_environment("hopper", HopperEnv)
+envs.register_environment("hopper_tracking", HopperTrackingEnv)
