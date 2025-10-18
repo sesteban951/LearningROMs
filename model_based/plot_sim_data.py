@@ -71,6 +71,7 @@ if __name__ == "__main__":
 
     # import the data file
     data = np.load(f"./model_based/{robot}/{robot}_data.npz")
+    # data = np.load(f"./model_based/data/biped_run000100.npz")
 
     # unpck the data 
     t_log = data["t_log"]

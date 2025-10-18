@@ -15,8 +15,8 @@ from model_based.hopper.simulation import SimulationConfig as HopperConfig
 if __name__ == "__main__":
 
     # which robot to simulate
-    # robot = "biped" 
-    robot = "hopper"
+    robot = "biped"
+    # robot = "hopper"
 
     # Biped simulation
     if robot == "biped":
@@ -24,14 +24,14 @@ if __name__ == "__main__":
         sim_config = BipedConfig(
             visualization=True, # visualize or not
             sim_dt=0.002,        # sim time step
-            sim_time=10.0,       # total sim time
+            sim_time=5.0,       # total sim time
             cmd_scaling=1.0,     # scaling of the command for joysticking 
             cmd_default=0.2      # default forward velocity command
         )
 
         # create simulation object
         simulation = BipedSimulation(sim_config)
-        simulation.simulate()
+        logs = simulation.simulate()
 
     # Hopper simulation
     elif robot == "hopper":
@@ -47,8 +47,19 @@ if __name__ == "__main__":
 
         # create simulation object
         simulation = HopperSimulation(sim_config)
-        simulation.simulate()
+        logs = simulation.simulate()
 
     # Unknown robot
     else:
         raise ValueError(f"Unknown robot type: {robot}")
+    
+    # save the logs
+    t_log, q_log, v_log, u_log, c_log, cmd_log = logs
+    if robot == "biped":
+        np.savez("./model_based/biped/biped_data.npz",
+                 t_log=t_log, q_log=q_log, v_log=v_log, u_log=u_log, c_log=c_log, cmd_log=cmd_log)
+    elif robot == "hopper":
+        np.savez("./model_based/hopper/hopper_data.npz",
+                 t_log=t_log, q_log=q_log, v_log=v_log, u_log=u_log, c_log=c_log, cmd_log=cmd_log)
+
+    print("Simulation complete and data saved.")
