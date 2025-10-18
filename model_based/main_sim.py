@@ -15,8 +15,8 @@ from model_based.hopper.simulation import SimulationConfig as HopperConfig
 if __name__ == "__main__":
 
     # which robot to simulate
-    robot = "biped"
     # robot = "hopper"
+    robot = "biped"
 
     # Biped simulation
     if robot == "biped":

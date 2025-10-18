@@ -88,15 +88,16 @@ def _worker(run_id: int):
     t_log, q_log, v_log, u_log, c_log, cmd_log = _SIM.simulate()
 
     # save (ensure dir exists)
-    out_dir = "./model_based/data"
-    # os.makedirs(out_dir, exist_ok=True)
-    # save_path = os.path.join(out_dir, f"{_ROBOT}_run{run_id:06d}.npz")
-    # np.savez_compressed(
-    #     save_path,
-    #     t_log=t_log, q_log=q_log, v_log=v_log, u_log=u_log, c_log=c_log, cmd_log=cmd_log
-    # )
+    save_dir = "./model_based/data/"
+    info = f"{_ROBOT}_seed_{_SEED}_run_{run_id:04d}_cmd_{cmd:.2f}"
+    os.makedirs(save_dir, exist_ok=True)
+    save_path = os.path.join(save_dir, info)
+    np.savez_compressed(
+        save_path,
+        t_log=t_log, q_log=q_log, v_log=v_log, u_log=u_log, c_log=c_log, cmd_log=cmd_log
+    )
 
-    return {"run_id": run_id, "steps": len(t_log), "t_final": float(t_log[-1]) if len(t_log) else 0.0}
+    return run_id
 
 
 ##################################################################################
@@ -122,8 +123,8 @@ if __name__ == "__main__":
     }
 
     # workers and runs
-    num_workers = 8   # mp.cpu_count()
-    num_runs = 128     # workers will reuse the same sim object for multiple runs
+    num_workers = 16   # mp.cpu_count()
+    num_runs = 64     # workers will reuse the same sim object for multiple runs
 
     # safer start for MuJoCo/GL
     try:
@@ -145,7 +146,7 @@ if __name__ == "__main__":
         for f in as_completed(futs):
             try:
                 res = f.result()
-                print(f"Run {res['run_id']:04d} successful.")
+                print(f"Run {res:04d} successful.")
             except Exception as e:
                 print("Run failed:", repr(e))
 

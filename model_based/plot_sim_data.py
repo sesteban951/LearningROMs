@@ -3,6 +3,11 @@ import numpy as np
 import matplotlib.pyplot as plt
 import math
 
+
+################################################################################
+# UTILS
+################################################################################
+
 # labels for the biped
 def biped_labels():
     q_labels = [
@@ -71,7 +76,7 @@ if __name__ == "__main__":
 
     # import the data file
     data = np.load(f"./model_based/{robot}/{robot}_data.npz")
-    # data = np.load(f"./model_based/data/biped_run000100.npz")
+    # data = np.load(f"./model_based/data/biped_seed_1_run_0002_cmd_-0.41.npz")
 
     # unpck the data 
     t_log = data["t_log"]
