@@ -9,8 +9,8 @@ import mujoco
 import glfw
 
 # custom includes 
-from indeces import Biped_IDX
-from utils import InverseKinematics, bezier_curve, Joy
+from .indeces import Biped_IDX
+from .utils import InverseKinematics, bezier_curve, Joy
 
 ##################################################################################
 # CONTROLLER

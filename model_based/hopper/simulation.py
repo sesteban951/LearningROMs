@@ -8,8 +8,8 @@ import mujoco
 import glfw
 
 # custom includes 
-from indeces import Hopper_IDX
-from utils import Joy
+from .indeces import Hopper_IDX
+from .utils import Joy
 
 ##################################################################################
 # CONTROLLER
