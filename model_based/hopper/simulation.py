@@ -361,16 +361,10 @@ class Simulation:
             # increment the counter
             counter += 1
 
-        # save the logged info to a npz file
-        file_name = "./model_based/hopper/hopper_data.npz"
-        np.savez(file_name,
-                t_log=t_data,
-                q_log=q_data,
-                v_log=v_data,
-                u_log=u_data,
-                c_log=c_data,
-                cmd_log=cmd_data)
-        print(f"Saved simulation data to {file_name}")
+        # close the glfw window
+        if self.config.visualization == True:
+            glfw.destroy_window(window)
+            glfw.terminate()
 
         return t_data, q_data, v_data, u_data, c_data, cmd_data
 
